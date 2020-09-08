@@ -1,0 +1,100 @@
+// terminals
+// \s because: https://github.com/lark-parser/lark/pull/482
+COMMENT: /\s*\/\/.*/
+NAME: /[a-zA-Z]([a-zA-Z0-9-]*[a-zA-Z0-9])?/
+BUFFER_NAME.2: /[A-Z]+/
+NIL: "nil"
+
+%import common.WS
+%import common.INT
+%import common.ESCAPED_STRING
+%import common.SIGNED_NUMBER
+
+// irrelevant to the document
+%ignore COMMENT
+%ignore WS
+
+// parser starting definition representing a model
+start: definition*
+
+?definition: task
+           | action
+           | facts
+           | script
+           | initscript
+           | skill
+
+// TODO: complete
+task: "define task" NAME "{" /[^}]+/ "}"
+action: "define action" NAME "{" /[^}]+/ "}"
+
+// initialize declarative memory
+facts: "define facts" "{" chunk* "}"
+chunk: "(" NAME (pref | slot)+ ")"
+slot: NAME
+pref: ":" NAME NAME
+
+// scripts
+script: "define script" "{" body "}"
+initscript: "define init-script" "{" body "}"
+
+body: statement*
+
+?statement: assignment
+         | ifstmt
+         | whilestmt
+         | forstmt
+         | expressionstatement
+
+assignment: NAME "=" expression
+
+ifstmt: "if" "(" expression ")" "{" body "}" ("else" "{" body "}")?
+
+whilestmt: "while" "(" expression ")" "{" body "}"
+
+forstmt: "for" NAME "in" INT "to" INT "{" body "}"
+   | "for" NAME "in" NAME "{" body "}"
+
+expressionstatement: expression
+
+?expression: comparison
+          | expression "&&" comparison -> and
+          | expression "||" comparison -> or
+
+?comparison: sum
+          | comparison "==" sum -> equality
+          | comparison "<>" sum -> inequality
+
+?sum: product
+   | sum "+" product -> addition
+   | sum "-" product -> subtraction
+
+?product: atom
+       | product "*" atom -> multiplication
+       | product "/" atom -> division
+
+?atom: INT -> literal
+     | SIGNED_NUMBER -> literal
+     | ESCAPED_STRING -> literal
+     | NIL -> literal
+     | NAME -> variable
+     | "[" (expression ("," expression)*)? "]" -> array
+     | atom "(" (expression ("," expression)*)? ")" -> call
+     | atom "[" expression "]" -> indexing
+     | "!" atom -> negation
+     | "(" expression ")" -> prioritization
+
+// skills (operators)
+
+skill: "define skill" NAME "{" operator* "}"
+
+operator: "operator" NAME "{" conditionprim+ "==>" actionprim+ "}"
+
+conditionprim: bufferslot "=" bufferslot -> bufferequal
+             | bufferslot "<>" bufferslot -> bufferinequal
+
+actionprim: bufferslot "->" bufferslot
+
+bufferslot: NIL
+          | BUFFER_NAME INT
+          | NAME
