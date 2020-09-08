@@ -1,5 +1,4 @@
 from miniprims import Model, Chunk, SlotID, EqualsPrim, NotEqualsPrim, CopyPrim
-import operator
 import random
 
 model = Model()
@@ -15,7 +14,8 @@ m.append(Chunk.build('start-count', 'operator', 'count-fact', 'say',
                              CopyPrim(SlotID('V', 1), SlotID('AC', 2))]))
 m.append(Chunk.build('iterate', 'operator', 'count-fact', 'say',
                      condition=[EqualsPrim(SlotID('RT', 2), SlotID('WM', 1)),
-                                NotEqualsPrim(SlotID('V',  2), SlotID('WM', 1))],
+                                NotEqualsPrim(SlotID('V',  2),
+                                              SlotID('WM', 1))],
                      action=[CopyPrim(SlotID('RT', 3), SlotID('WM', 1)),
                              CopyPrim(SlotID('C',  1), SlotID('RT', 1)),
                              CopyPrim(SlotID('RT', 3), SlotID('RT', 2)),
@@ -27,7 +27,8 @@ m.append(Chunk.build('final', 'operator', 'say', 'stop',
                      action=[CopyPrim(SlotID('C', 1), SlotID('AC', 1)),
                              CopyPrim(SlotID('C', 2), SlotID('AC', 2))]))
 
-digits = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten']
+digits = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight',
+          'nine', 'ten']
 for i in range(1, len(digits)):
     m.append(Chunk.build(f'cf{i}', 'fact', 'count-fact', digits[i - 1],
                          digits[i]))
