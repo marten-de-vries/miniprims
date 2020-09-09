@@ -1,8 +1,8 @@
+import miniprims
+
 import ast
 
 import lark
-
-import miniprims
 
 parser = lark.Lark.open('prims.lark', rel_to=__file__, parser='lalr',
                         debug=True)
@@ -10,6 +10,12 @@ parser = lark.Lark.open('prims.lark', rel_to=__file__, parser='lalr',
 
 class TreeLoader(lark.Transformer):
     mp = ast.Name('miniprims', ast.Load())
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.userscript = None
+        self.model = miniprims.Model()
 
     # basic type conversions
     def ESCAPED_STRING(self, args):
@@ -24,6 +30,9 @@ class TreeLoader(lark.Transformer):
     def NAME(self, args):
         return str(args)
     BUFFER_NAME = NAME
+
+    def literal(self, args):
+        return args[0]
 
     def NIL(self, args):
         return None
@@ -40,8 +49,7 @@ class TreeLoader(lark.Transformer):
             else:
                 assert arg.data == 'pref'
                 prefs[arg.children[0]] = arg.children[1]
-        # TODO: use prefs
-        return miniprims.Chunk(slots, name, isa='fact')
+        return miniprims.Chunk(self.model.config, slots, name, 'fact', **prefs)
 
     # script
     def variable(self, args):
@@ -57,7 +65,7 @@ class TreeLoader(lark.Transformer):
         index = ast.Index(args[1], ctx=ast.Load)
         return ast.Subscript(args[0], index, ctx=ast.Load())
 
-    def literal(self, args):
+    def codeliteral(self, args):
         return ast.Constant(args[0])
 
     def expressionstatement(self, args):
@@ -84,6 +92,7 @@ class TreeLoader(lark.Transformer):
 
     def body(self, args):
         return args
+    actionprim = pair = body
 
     # skill
     def bufferslot(self, args):
@@ -92,16 +101,12 @@ class TreeLoader(lark.Transformer):
         return miniprims.SlotID(*args)
 
     def bufferequal(self, args):
-        return miniprims.EqualsPrim(args[0], args[1])
+        return miniprims.EqualsPRIM(args[0], args[1])
 
     def bufferinequal(self, args):
-        return miniprims.NotEqualsPrim(args[0], args[1])
+        return miniprims.NotEqualsPRIM(args[0], args[1])
 
-    def prioritization(self, args):
-        return args[0]
-
-    def actionprim(self, args):
-        return args
+    prioritization = literal
 
     def operator(self, args):
         constants = {}
@@ -115,32 +120,40 @@ class TreeLoader(lark.Transformer):
                     slot_num = constants.setdefault(bufferslot, next_i)
                     arg[index] = miniprims.SlotID('C', slot_num)
             if isinstance(arg, list):
-                action.append(miniprims.CopyPrim(*arg))
+                action.append(miniprims.CopyPRIM(*arg))
             else:
                 condition.append(arg)
-        return miniprims.Chunk.build(args[0], 'operator', *constants.keys(),
-                                     condition=condition, action=action)
+        return self.model.chunk(args[0], 'operator', *constants.keys(),
+                                condition=condition, action=action)
+
+    def facts(self, args):
+        for chunk in args:
+            self.model.declarative.add_memory(chunk)
+
+    def skill(self, args):
+        # we do not really use the skill name in arg.children[0]...
+        for chunk in args[1:]:
+            self.model.declarative.add_memory(chunk)
+
+    def action(self, args):
+        name = args[0]
+        opts = dict(args[1:])
+        self.model.action.register(name, **opts)
+
+    def script(self, args):
+        assert not self.userscript
+
+        self.userscript = ast.Module(args[0], [])
+        ast.fix_missing_locations(self.userscript)
+
+    def task(self, args):
+        print("UNPROCESSED: task")
 
     # model
     def start(self, args):
-        model = miniprims.Model()
-        script = None
-
-        for arg in args:
-            if arg.data == 'facts':
-                for chunk in arg.children:
-                    model.modules['RT'].memory.append(chunk)
-            elif arg.data == 'script':
-                assert not script
-                script = ast.Module(arg.children[0], [])
-                ast.fix_missing_locations(script)
-            elif arg.data == 'skill':
-                # we do not really use the skill name in arg.children[0]...
-                for chunk in arg.children[1:]:
-                    model.modules['RT'].memory.append(chunk)
-            else:
-                print('UNPROCESSED', arg.data)
-        return script, model
+        # check every definition has been handled by other visitor methods
+        assert(a is None for a in args)
+        return self.userscript, self.model
 
 
 def load(filename):

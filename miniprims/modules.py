@@ -1,13 +1,19 @@
 """Implementation details of PRIMs modules."""
 
+import bisect
+import math
+
+import numpy
+
 from .chunk import Chunk
 
 
 class Module:
-    def __init__(self):
+    def __init__(self, config):
+        self.config = config
         # a list of all buffers this module has known. The most recent one is
         # accessable as self.buffer
-        self.buffers = [Chunk.build(self.__class__.__name__, 'buffer')]
+        self.buffers = [Chunk.build(config, self.__class__.__name__, 'buffer')]
 
     @property
     def buffer(self):
@@ -20,7 +26,9 @@ class Module:
 
 
 class Visual(Module):
-    pass
+    def show(self, *values):
+        chunk = Chunk.build(self.config, 'Visual', 'buffer', *values)
+        self.buffers.append(chunk)
 
 
 class Imaginal(Module):
@@ -30,43 +38,103 @@ class Imaginal(Module):
 class Goal(Module):
     def buffer_change(self, new_buffer, env, main_process):
         self.buffers.append(new_buffer)
-        if 1 in self.buffer.slots and self.buffer[1] is None:
+        if not self.bufferslots():  # no goal remains
             return main_process.interrupt()
         yield env.timeout(0)
 
 
 class Declarative(Module):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, config):
+        super().__init__(config)
 
         self.memory = []
 
+    def add_memory(self, new_chunk, t=0):
+        for chunk in self.memory:
+            if chunk.slots == new_chunk.slots:
+                break  # there's an existing chunk in memory like this one
+        else:
+            # no chunk like this in memory yet, so create it
+            chunk = new_chunk
+            self.memory.append(chunk)
+        # reinforce the chunk
+        self.reinforce(chunk, t)
+
+    def reinforce(self, chunk, t):
+        if self.config['ol']:  # optimized learning
+            if chunk.creation_time is None:
+                chunk.creation_time = t
+            chunk.reinforced_count += 1
+        else:
+            chunk.reinforced.append(t)
+
+    def best_matches(self, match_cond, t, max_matches=None):
+        result = []
+        for chunk in self.memory:
+            if not match_cond(chunk):
+                continue
+            activation = chunk.baselevel_activation(t)
+            if activation < self.config['rt']:
+                continue
+            # TODO: more activation
+            # '-' because Python implements a min heap and we want a max heap
+            # random() to prevent chunks from ever being compared.
+            bisect.insort(result, (activation, numpy.random.random(), chunk))
+            result = result[:max_matches]
+
+        for activation, _, chunk in reversed(result):
+            yield activation, chunk
+
+    def best_match(self, search_chunk, t):
+        search_slots = search_chunk.slotslist()
+
+        def match_cond(chunk):
+            return all(a == b for a, b in zip(chunk.slotslist(), search_slots))
+        return next(self.best_matches(match_cond, t, max_matches=1))
+
     def buffer_change(self, new_buffer, env, main_process):
+        try:
+            exponent, match = self.best_match(new_buffer, env.now)
+        except StopIteration:
+            exponent = self.config['rt']
+            match = Chunk.build(self.config, 'retrieval-failure', 'status',
+                                'error')
+
+        yield env.timeout(self.config['lf'] * math.exp(-exponent))
         self.buffers.append(new_buffer)
-        matches = [c for c in self.memory if all(
-            a == b for a, b in zip(c.slotslist(), self.buffer.slotslist())
-        )]
-        if len(matches) == 1:
-            chunk = matches[0]
-            self.buffer.slots = chunk.slots.copy()
-        yield env.timeout(0)  # TODO
+        self.buffers.append(match)
 
 
 class Action(Module):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.interrupt_trigger = None
+        self.actions = {}
+
+    def register(self, name, latency, noise, distribution, output):
+        duration = {
+            'none': lambda: latency,
+            'uniform': lambda: numpy.random.uniform(latency - noise,
+                                                    latency + noise),
+            'logistic': lambda: numpy.random.logistic(latency, noise),
+        }[distribution]
+        self.actions[name] = duration, output
+
     def buffer_change(self, new_buffer, env, main_process):
         self.buffers.append(new_buffer)
+        info = self.buffer.slotslist()
         try:
-            action, *args = self.buffer.slotslist()
+            action, *args = info
         except ValueError:
             pass
         else:
-            pretty = {
-                'say': "Saying",
-            }[action]
-            print(f"{pretty} {' '.join(args)}")
-            if action == 'say' and args == ['stop']:
-                return main_process.interrupt()
-        yield env.timeout(0)  # TODO
+            calculate_duration, output = self.actions[action]
+            yield env.timeout(calculate_duration())
+            print(f"{env.now:.3f} {output} {' '.join(args)}")
+
+        if self.interrupt_trigger == info[:len(self.interrupt_trigger)]:
+            return main_process.interrupt()
 
 
 class Constants:

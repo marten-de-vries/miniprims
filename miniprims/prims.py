@@ -14,7 +14,7 @@ class SlotID(typing.NamedTuple):
         return f'{self.buffer_name}{self.slot_num}'
 
 
-class EqualsPrim(typing.NamedTuple):
+class EqualsPRIM(typing.NamedTuple):
     """Immutable representation of a prim like 'WM1==RT2'"""
 
     lhs: SlotID
@@ -25,7 +25,7 @@ class EqualsPrim(typing.NamedTuple):
         return f"{self.lhs or 'nil'}=={self.rhs or 'nil'}"
 
 
-class NotEqualsPrim(typing.NamedTuple):
+class NotEqualsPRIM(typing.NamedTuple):
     """Immutable representation of a prim like 'WM1<>RT2'"""
 
     lhs: SlotID
@@ -36,7 +36,7 @@ class NotEqualsPrim(typing.NamedTuple):
         return f"{self.lhs or 'nil'}<>{self.rhs or 'nil'}"
 
 
-class CopyPrim(typing.NamedTuple):
+class CopyPRIM(typing.NamedTuple):
     """Immutable representation of a prim like 'WM1->RT2'"""
 
     lhs: SlotID
