@@ -5,8 +5,15 @@ import textwrap
 
 from .prims import CopyPRIM, SlotID, EqualsPRIM, NotEqualsPRIM
 
+# TODO: reverse logic. The model can call this, which also means we get rid of
+# 'model' in the constructor & the other TODO.
+
 
 class Skill:
+    """Syntactic sugar for defining operator, skill and skill instance
+    chunks (the last one is TODO).
+
+    """
     def __init__(self, model):
         for attribute in self.__class__.__dict__.values():
             # TODO: check if operators already in model

@@ -45,7 +45,7 @@ model.visual.show(digits[start], digits[end])
 model.action.interrupt_trigger = ['say', 'stop']
 model.action.register('say', 0.3, 0.1, 'uniform', 'Saying')
 model.goal.focus(['count'])
-
+model.schedule_steps_until_done()
 model.env.run()
 
 print("done")

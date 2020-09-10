@@ -8,7 +8,7 @@ import numpy
 from .chunk import Chunk
 
 
-class Module:
+class BufferModule:
     def __init__(self, config):
         self.config = config
         # a list of all buffers this module has known. The most recent one is
@@ -19,7 +19,7 @@ class Module:
     def buffer(self):
         return self.buffers[-1]
 
-    def buffer_change(self, new_buffer, env, main_process):
+    def buffer_change(self, new_buffer, env):
         """return type: True when the simulation should pause, False
         otherwise.
 
@@ -30,18 +30,18 @@ class Module:
         return False
 
 
-class Visual(Module):
+class Visual(BufferModule):
     def show(self, *values):
         chunk = Chunk.build(self.config, 'Visual', 'buffer', *values)
         self.buffers.append(chunk)
 
 
-class Imaginal(Module):
+class Imaginal(BufferModule):
     pass
 
 
-class Goal(Module):
-    def buffer_change(self, new_buffer, env, main_process):
+class Goal(BufferModule):
+    def buffer_change(self, new_buffer, env):
         self.buffers.append(new_buffer)
         yield env.timeout(0)
         # stop if no goal remains
@@ -52,7 +52,7 @@ class Goal(Module):
         self.buffers.append(chunk)
 
 
-class Declarative(Module):
+class Declarative(BufferModule):
     def __init__(self, config):
         super().__init__(config)
 
@@ -101,7 +101,7 @@ class Declarative(Module):
             return all(a == b for a, b in zip(chunk.slotslist(), search_slots))
         return next(self.best_matches(match_cond, t, max_matches=1))
 
-    def buffer_change(self, new_buffer, env, main_process):
+    def buffer_change(self, new_buffer, env):
         try:
             exponent, match = self.best_match(new_buffer, env.now)
         except StopIteration:
@@ -115,7 +115,7 @@ class Declarative(Module):
         return False
 
 
-class Action(Module):
+class Action(BufferModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -131,7 +131,7 @@ class Action(Module):
         }[distribution]
         self.actions[name] = duration, output
 
-    def buffer_change(self, new_buffer, env, main_process):
+    def buffer_change(self, new_buffer, env):
         self.buffers.append(new_buffer)
         info = self.buffer.slotslist()
         try:
@@ -149,3 +149,74 @@ class Action(Module):
 
 class Constants:
     """Not a module, just used to hold the current operator in its 'buffer'."""
+
+
+class Procedural:
+    def __init__(self, config, modules):
+        self.config = config
+        self.modules = modules
+        self.declarative = modules['RT']
+
+    def step(self, env):
+        # return True if the simulation should pause, else False
+        matches = self.declarative.best_matches(self._match_ops, env.now)
+        for _, op in matches:
+            if self.match_conditions(op):
+                self.modules['C'].buffer = op
+
+                # perform actions
+                module_resp_processes = self.perform_actions(env, op)
+                yield env.timeout(0.05)  # TODO
+                stop_requests = yield env.all_of(module_resp_processes)
+                return any(stop_requests.values())
+        return False
+
+    def _match_ops(self, chunk):
+        return chunk['isa'] == 'operator'
+
+    def match_conditions(self, operator):
+        return all(self.match_condition(part)
+                   for part in operator['condition'])
+
+    def match_condition(self, condition):
+        undefined = object()
+        try:
+            lhs_val = self.slot_value(condition.lhs)
+        except KeyError:
+            lhs_val = undefined
+        try:
+            rhs_val = self.slot_value(condition.rhs)
+        except KeyError:
+            rhs_val = undefined
+        if lhs_val == undefined and rhs_val == undefined:
+            return False
+        all_nothing = ((lhs_val is None and rhs_val == undefined) or
+                       (lhs_val == undefined and rhs_val is None))
+        if all_nothing:
+            return condition.operator(None, None)
+        return condition.operator(lhs_val, rhs_val)
+
+    def perform_actions(self, env, operator):
+        new_buffers = {}
+        for lhs, rhs in operator['action']:
+            mod_name, slot = rhs
+            mod = self.modules[mod_name]
+            # TODO: only RT? And is there a nicer way?
+            fallback = {} if mod_name == 'RT' else mod.buffer.slots.copy()
+            new_buffer = new_buffers.setdefault(mod, fallback)
+            slot_val = self.slot_value(lhs)
+            if slot_val is None:
+                del new_buffer[slot]
+            else:
+                new_buffer[slot] = slot_val
+
+        for mod, new_buffer in new_buffers.items():
+            c = Chunk(self.config, new_buffer)
+            callback = mod.buffer_change(c, env)
+            yield env.process(callback)
+
+    def slot_value(self, slotinfo):
+        if not slotinfo:
+            return None
+        mod, slot = slotinfo
+        return self.modules[mod].buffer[slot]

@@ -13,4 +13,5 @@ for chunk in model.modules['RT'].memory:
 
 model.visual.show('one', 'ten')
 model.action.interrupt_trigger = ['say', 'stop']
+model.schedule_steps_until_done()
 model.env.run()
