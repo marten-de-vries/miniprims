@@ -16,6 +16,7 @@ class TreeLoader(lark.Transformer):
 
         self.userscript = None
         self.model = miniprims.Model()
+        self.constants = {}
 
     # basic type conversions
     def ESCAPED_STRING(self, args):
@@ -33,6 +34,8 @@ class TreeLoader(lark.Transformer):
 
     def literal(self, args):
         return args[0]
+
+    prioritization = literal
 
     def NIL(self, args):
         return None
@@ -53,17 +56,17 @@ class TreeLoader(lark.Transformer):
 
     # script
     def variable(self, args):
-        return ast.Name(args[0], ctx=ast.Load())
+        return ast.Name(args[0], ast.Load())
 
     def call(self, args):
         return ast.Call(args[0], args[1:], [])
 
     def array(self, args):
-        return ast.List(args, ctx=ast.Load())
+        return ast.List(args, ast.Load())
 
     def indexing(self, args):
-        index = ast.Index(args[1], ctx=ast.Load)
-        return ast.Subscript(args[0], index, ctx=ast.Load())
+        index = ast.Index(args[1])
+        return ast.Subscript(args[0], index, ast.Load())
 
     def codeliteral(self, args):
         return ast.Constant(args[0])
@@ -81,7 +84,7 @@ class TreeLoader(lark.Transformer):
         return ast.UnaryOp(ast.Not(), args[0])
 
     def assignment(self, args):
-        variable = ast.Name(args[0], ctx=ast.Store())
+        variable = ast.Name(args[0], ast.Store())
         return ast.Assign([variable], args[1])
 
     def ifstmt(self, args):
@@ -92,7 +95,7 @@ class TreeLoader(lark.Transformer):
 
     def body(self, args):
         return args
-    actionprim = pair = body
+    pair = body
 
     # skill
     def bufferslot(self, args):
@@ -101,29 +104,35 @@ class TreeLoader(lark.Transformer):
         return miniprims.SlotID(*args)
 
     def bufferequal(self, args):
-        return miniprims.EqualsPRIM(args[0], args[1])
+        return miniprims.EqualsPRIM(self._to_id(args[0]), self._to_id(args[1]))
+
+    def _to_id(self, bufferslot):
+        if isinstance(bufferslot, str):
+            next_i = len(self.constants) + 1
+            slot_num = self.constants.setdefault(bufferslot, next_i)
+            bufferslot = miniprims.SlotID('C', slot_num)
+        return bufferslot
 
     def bufferinequal(self, args):
-        return miniprims.NotEqualsPRIM(args[0], args[1])
+        return miniprims.NotEqualsPRIM(self._to_id(args[0]),
+                                       self._to_id(args[1]))
 
-    prioritization = literal
+    def actionprim(self, args):
+        return miniprims.CopyPRIM(self._to_id(args[0]), self._to_id(args[1]))
 
     def operator(self, args):
-        constants = {}
         condition = []
         action = []
-        for arg in args[1:]:
-            for index in [0, -1]:
-                bufferslot = arg[index]
-                if isinstance(bufferslot, str):
-                    next_i = len(constants) + 1
-                    slot_num = constants.setdefault(bufferslot, next_i)
-                    arg[index] = miniprims.SlotID('C', slot_num)
-            if isinstance(arg, list):
-                action.append(miniprims.CopyPRIM(*arg))
+        for prim in args[1:]:
+            if isinstance(prim, miniprims.CopyPRIM):
+                action.append(prim)
             else:
-                condition.append(arg)
-        return self.model.chunk(args[0], 'operator', *constants.keys(),
+                cond_prims = (miniprims.EqualsPRIM, miniprims.NotEqualsPRIM)
+                assert isinstance(prim, cond_prims)
+                condition.append(prim)
+        constant_names = self.constants.keys()
+        self.constants = {}  # prepare for the next operator
+        return self.model.chunk(args[0], 'operator', *constant_names,
                                 condition=condition, action=action)
 
     def facts(self, args):
@@ -131,9 +140,15 @@ class TreeLoader(lark.Transformer):
             self.model.declarative.add_memory(chunk)
 
     def skill(self, args):
-        # we do not really use the skill name in arg.children[0]...
-        for chunk in args[1:]:
-            self.model.declarative.add_memory(chunk)
+        # add operators that are part of the skill
+        for operator_chunk in args[1:]:
+            self.model.declarative.add_memory(operator_chunk)
+
+        # TODO: re-enable after activations have been figured out
+        # ... and create a chunk for the skill itself
+        # name = args[0]
+        # skill_chunk = self.model.chunk(name, 'skill')
+        # self.model.declarative.add_memory(skill_chunk)
 
     def action(self, args):
         name = args[0]
@@ -143,11 +158,24 @@ class TreeLoader(lark.Transformer):
     def script(self, args):
         assert not self.userscript
 
-        self.userscript = ast.Module(args[0], [])
+        self.userscript = ast.parse("")
+        self.userscript.body = args[0]
         ast.fix_missing_locations(self.userscript)
 
     def task(self, args):
-        print("UNPROCESSED: task")
+        self.model.name = args[0]
+        for key, value in args[1:]:
+            self.model.config.override(key, value)
+
+    def true(self, args):
+        return True
+
+    def false(self, args):
+        return False
+
+    def initskills(self, args):
+        self.model.goal.focus(args)
+        raise lark.visitors.Discard()
 
     # model
     def start(self, args):
@@ -164,4 +192,5 @@ def load(filename):
     with open(filename) as f:
         tree = parser.parse(f.read())
         # print(tree.pretty())
-        return TreeLoader().transform(tree)
+        script, model = TreeLoader().transform(tree)
+        return script, model

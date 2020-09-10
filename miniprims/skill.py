@@ -1,4 +1,5 @@
 import ast
+import contextlib
 import inspect
 import textwrap
 
@@ -20,8 +21,10 @@ class Skill:
 
         assert not func.decorator_list
         assert not func.returns
-        assert not func.type_comment
-        assert not func.args.posonlyargs
+        with contextlib.suppress(AttributeError):
+            assert not func.type_comment
+        with contextlib.suppress(AttributeError):
+            assert not func.args.posonlyargs
         constants = [a.arg for a in func.args.args]
 
         condition = []
@@ -31,11 +34,10 @@ class Skill:
             if isinstance(expr.value, ast.Compare):
                 assert not action
                 condition.append(self.to_condition_prim(expr, constants))
-            elif isinstance(expr.value, ast.BinOp):
+            else:
+                assert isinstance(expr.value, ast.BinOp)
                 assert condition  # there should be at least one condition
                 action.append(self.to_action_prim(expr, constants))
-            else:
-                assert False, f"unexpected expression type: {type(expr)}"
         operator = model.chunk(func.name, 'operator', *constants,
                                condition=condition, action=action)
         model.declarative.add_memory(operator)
@@ -56,16 +58,23 @@ class Skill:
         if isinstance(expr, ast.Subscript):
             assert isinstance(expr.value, ast.Name)
             assert isinstance(expr.slice, ast.Index)
-            assert isinstance(expr.slice.value, ast.Constant)
 
-            assert isinstance(expr.slice.value.value, int)
-            return SlotID(expr.value.id, expr.slice.value.value)
+            return SlotID(expr.value.id, self.index_num(expr.slice))
         elif isinstance(expr, ast.Name):
             return SlotID('C', constants.index(expr.id) + 1)
         else:
-            assert isinstance(expr, ast.Constant)
+            assert isinstance(expr, (ast.Constant, ast.NameConstant))
             assert expr.value is None
             return expr.value
+
+    def index_num(self, expr):
+        if isinstance(expr.value, ast.Constant):
+            num = expr.value.value
+        else:
+            assert isinstance(expr.value, ast.Num)
+            num = expr.value.n
+        assert isinstance(num, int)
+        return num
 
     def to_action_prim(self, expr, constants):
         assert isinstance(expr.value.op, ast.RShift)

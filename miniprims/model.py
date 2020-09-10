@@ -12,10 +12,12 @@ class Model:
 
         self.action = Action(self.config)
         self.declarative = Declarative(self.config)
+        self.goal = Goal(self.config)
         self.visual = Visual(self.config)
-        self.modules = {'AC': self.action, 'C': Constants(),
-                        'G': Goal(self.config), 'RT': self.declarative,
-                        'V': self.visual, 'WM': Imaginal(self.config)}
+        self.imaginal = Imaginal(self.config)
+        self.modules = {'AC': self.action, 'C': Constants(), 'G': self.goal,
+                        'RT': self.declarative, 'V': self.visual,
+                        'WM': self.imaginal}
         self.env = simpy.Environment()
         self.env.process(self._run())
 
@@ -26,9 +28,6 @@ class Model:
         chunk = Chunk(self.config, skill.slots, name, 'skill')
         self.declarative.add_memory(chunk)
 
-    def focus(self, skills):
-        pass  # TODO
-
     def script(self, script):
         pass  # TODO
 
@@ -36,29 +35,29 @@ class Model:
         while True:
             # reset buffers?
             # run script
-            while True:
+            stop = False
+            while not stop:
                 step = self._run_prims(self.env.active_process)
 
-                try:
-                    yield self.env.process(step)
-                except simpy.Interrupt:
-                    break  # we're done with this simulation round
+                stop = yield self.env.process(step)
             break  # TODO: remove
 
     def _match_ops(self, chunk):
         return chunk['isa'] == 'operator'
 
     def _run_prims(self, parent):
+        # return True if the simulation should pause, else False
         matches = self.declarative.best_matches(self._match_ops, self.env.now)
         for _, op in matches:
             if self.match_conditions(op):
                 self.modules['C'].buffer = op
 
                 # perform actions
-                module_response_processes = self.perform_actions(op, parent)
+                module_resp_processes = self.perform_actions(op, parent)
                 yield self.env.timeout(0.05)  # TODO
-                yield self.env.all_of(module_response_processes)
-                break
+                stop_requests = yield self.env.all_of(module_resp_processes)
+                return any(stop_requests.values())
+        return False
 
     def match_conditions(self, operator):
         return all(self.match_condition(part)

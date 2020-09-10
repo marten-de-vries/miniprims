@@ -24,11 +24,14 @@ start: definition*
            | initscript
            | skill
 
-// TODO: complete
-task: "define task" NAME "{" /[^}]+/ "}"
-action: "define action" NAME "{" pair+ "}"
+task: "define task" NAME "{" (initskills | pair)+ "}"
 
-pair: NAME ":" (literal | NAME)
+initskills: "initial-skills" ":" "(" (NAME ("," NAME)*)? ")"
+pair: NAME ":" (literal | NAME | bool)
+bool: "t" -> true
+    | "f" -> false
+
+action: "define action" NAME "{" pair+ "}"
 
 // initialize declarative memory
 facts: "define facts" "{" chunk* "}"

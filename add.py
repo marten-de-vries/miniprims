@@ -50,7 +50,7 @@ for i in range(0, 10):
     model.declarative.add_memory(fact)
 
 model.register_skill('add', Add(model))
-model.focus(['add'])
+model.goal.focus(['add'])
 
 num1 = random.randint(1, 5)
 num2 = random.randint(1, 5)

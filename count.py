@@ -44,6 +44,7 @@ print("Counting from", digits[start], "to", digits[end])
 model.visual.show(digits[start], digits[end])
 model.action.interrupt_trigger = ['say', 'stop']
 model.action.register('say', 0.3, 0.1, 'uniform', 'Saying')
+model.goal.focus(['count'])
 
 model.env.run()
 

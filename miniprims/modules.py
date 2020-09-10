@@ -20,9 +20,14 @@ class Module:
         return self.buffers[-1]
 
     def buffer_change(self, new_buffer, env, main_process):
+        """return type: True when the simulation should pause, False
+        otherwise.
+
+        """
         self.buffers.append(new_buffer)
 
         yield env.timeout(0)
+        return False
 
 
 class Visual(Module):
@@ -38,9 +43,13 @@ class Imaginal(Module):
 class Goal(Module):
     def buffer_change(self, new_buffer, env, main_process):
         self.buffers.append(new_buffer)
-        if not self.bufferslots():  # no goal remains
-            return main_process.interrupt()
         yield env.timeout(0)
+        # stop if no goal remains
+        return not self.buffer.slotslist()
+
+    def focus(self, *values):
+        chunk = Chunk.build(self.config, 'Goal', 'buffer', *values)
+        self.buffers.append(chunk)
 
 
 class Declarative(Module):
@@ -103,6 +112,7 @@ class Declarative(Module):
         yield env.timeout(self.config['lf'] * math.exp(-exponent))
         self.buffers.append(new_buffer)
         self.buffers.append(match)
+        return False
 
 
 class Action(Module):
@@ -133,8 +143,8 @@ class Action(Module):
             yield env.timeout(calculate_duration())
             print(f"{env.now:.3f} {output} {' '.join(args)}")
 
-        if self.interrupt_trigger == info[:len(self.interrupt_trigger)]:
-            return main_process.interrupt()
+        # if the interrupt trigger is in the buffer, stop.
+        return self.interrupt_trigger == info[:len(self.interrupt_trigger)]
 
 
 class Constants:
