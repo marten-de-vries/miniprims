@@ -58,7 +58,9 @@ class Chunk:
 
     # setters
     def reinforce(self, t):
-        if self.config['ol']:
+        if self.config['ol']:  # optimized learning
+            if self.creation_time is None:
+                self.creation_time = t
             self.reinforced_count += 1
         else:
             self.reinforced.append(t)

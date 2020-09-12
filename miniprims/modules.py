@@ -67,15 +67,7 @@ class Declarative(BufferModule):
             chunk = new_chunk
             self.memory.append(chunk)
         # reinforce the chunk
-        self.reinforce(chunk, t)
-
-    def reinforce(self, chunk, t):
-        if self.config['ol']:  # optimized learning
-            if chunk.creation_time is None:
-                chunk.creation_time = t
-            chunk.reinforced_count += 1
-        else:
-            chunk.reinforced.append(t)
+        chunk.reinforce(t)
 
     def best_matches(self, match_cond, t, max_matches=None):
         result = []
@@ -96,7 +88,7 @@ class Declarative(BufferModule):
         search_slots = search_chunk.slotslist()
 
         def match_cond(chunk):
-            return all(a == b for a, b in zip(chunk.slotslist(), search_slots))
+            return search_slots == chunk.slotslist()[:len(search_slots)]
         return next(self.best_matches(match_cond, t, max_matches=1))
 
     def buffer_change(self, new_buffer, env):
@@ -180,6 +172,8 @@ class Procedural:
         return new_buffers
 
     def module_responses(self, env, new_buffers):
+        # NOT meant to be a simpy process. Yielding here is solely to build up
+        # a list (of processes), not to wait for them to execute.
         for mod, new_buffer in new_buffers.items():
             c = Chunk(self.config, new_buffer)
             callback = mod.buffer_change(c, env)
