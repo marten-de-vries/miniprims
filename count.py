@@ -1,30 +1,30 @@
-from miniprims import Model, SlotID, EqualsPRIM, NotEqualsPRIM, CopyPRIM
+from miniprims import (Model, SlotID, EqualsPRIM, NotEqualsPRIM, CopyPRIM,
+                       EmptyPRIM, NotEmptyPRIM, RemovePRIM)
 import random
 
 model = Model()
 model.name = 'count'
 start_count = model.chunk('start-count', 'operator', 'count-fact', 'say',
-                          condition=[NotEqualsPRIM(SlotID('V', 1), None),
-                                     EqualsPRIM(SlotID('WM', 1), None)],
-                          action=[CopyPRIM(SlotID('V', 1), SlotID('WM', 1)),
-                                  CopyPRIM(SlotID('C', 1), SlotID('RT', 1)),
-                                  CopyPRIM(SlotID('V', 1), SlotID('RT', 2)),
-                                  CopyPRIM(SlotID('C', 2), SlotID('AC', 1)),
-                                  CopyPRIM(SlotID('V', 1), SlotID('AC', 2))])
+                          prims=[NotEmptyPRIM(SlotID('V', 1)),
+                                 EmptyPRIM(SlotID('WM', 1)),
+                                 CopyPRIM(SlotID('V', 1), SlotID('WM', 1)),
+                                 CopyPRIM(SlotID('C', 1), SlotID('RT', 1)),
+                                 CopyPRIM(SlotID('V', 1), SlotID('RT', 2)),
+                                 CopyPRIM(SlotID('C', 2), SlotID('AC', 1)),
+                                 CopyPRIM(SlotID('V', 1), SlotID('AC', 2))])
 iterate = model.chunk('iterate', 'operator', 'count-fact', 'say',
-                      condition=[EqualsPRIM(SlotID('RT', 2), SlotID('WM', 1)),
-                                 NotEqualsPRIM(SlotID('V',  2),
-                                               SlotID('WM', 1))],
-                      action=[CopyPRIM(SlotID('RT', 3), SlotID('WM', 1)),
-                              CopyPRIM(SlotID('C',  1), SlotID('RT', 1)),
-                              CopyPRIM(SlotID('RT', 3), SlotID('RT', 2)),
-                              CopyPRIM(SlotID('C',  2), SlotID('AC', 1)),
-                              CopyPRIM(SlotID('RT', 3), SlotID('AC', 2))])
+                      prims=[EqualsPRIM(SlotID('RT', 2), SlotID('WM', 1)),
+                             NotEqualsPRIM(SlotID('V',  2), SlotID('WM', 1)),
+                             CopyPRIM(SlotID('RT', 3), SlotID('WM', 1)),
+                             CopyPRIM(SlotID('C',  1), SlotID('RT', 1)),
+                             CopyPRIM(SlotID('RT', 3), SlotID('RT', 2)),
+                             CopyPRIM(SlotID('C',  2), SlotID('AC', 1)),
+                             CopyPRIM(SlotID('RT', 3), SlotID('AC', 2))])
 final = model.chunk('final', 'operator', 'say', 'stop',
-                    condition=[EqualsPRIM(SlotID('V', 2), SlotID('WM', 1))],
-                    # FIXME: last action 'nil -> G1' removed
-                    action=[CopyPRIM(SlotID('C', 1), SlotID('AC', 1)),
-                            CopyPRIM(SlotID('C', 2), SlotID('AC', 2))])
+                    prims=[EqualsPRIM(SlotID('V', 2), SlotID('WM', 1)),
+                           CopyPRIM(SlotID('C', 1), SlotID('AC', 1)),
+                           CopyPRIM(SlotID('C', 2), SlotID('AC', 2)),
+                           RemovePRIM(SlotID('G', 1))])
 
 model.declarative.add_memory(start_count)
 model.declarative.add_memory(iterate)

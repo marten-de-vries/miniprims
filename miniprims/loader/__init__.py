@@ -33,12 +33,12 @@ class TreeLoader(lark.Transformer):
     BUFFER_NAME = NAME
 
     def literal(self, args):
-        return args[0]
+        try:
+            return args[0]
+        except IndexError:
+            return None  # nil
 
     prioritization = literal
-
-    def NIL(self, args):
-        return None
 
     # facts
     def chunk(self, args):
@@ -103,7 +103,7 @@ class TreeLoader(lark.Transformer):
             return args[0]
         return miniprims.SlotID(*args)
 
-    def bufferequal(self, args):
+    def equalsprim(self, args):
         return miniprims.EqualsPRIM(self._to_id(args[0]), self._to_id(args[1]))
 
     def _to_id(self, bufferslot):
@@ -113,27 +113,27 @@ class TreeLoader(lark.Transformer):
             bufferslot = miniprims.SlotID('C', slot_num)
         return bufferslot
 
-    def bufferinequal(self, args):
+    def notequalsprim(self, args):
         return miniprims.NotEqualsPRIM(self._to_id(args[0]),
                                        self._to_id(args[1]))
 
-    def actionprim(self, args):
+    def emptyprim(self, args):
+        return miniprims.EmptyPRIM(self._to_id(args[0]))
+
+    def notemptyprim(self, args):
+        return miniprims.NotEmptyPRIM(self._to_id(args[0]))
+
+    def copyprim(self, args):
         return miniprims.CopyPRIM(self._to_id(args[0]), self._to_id(args[1]))
 
+    def removeprim(self, args):
+        return miniprims.RemovePRIM(self._to_id(args[0]))
+
     def operator(self, args):
-        condition = []
-        action = []
-        for prim in args[1:]:
-            if isinstance(prim, miniprims.CopyPRIM):
-                action.append(prim)
-            else:
-                cond_prims = (miniprims.EqualsPRIM, miniprims.NotEqualsPRIM)
-                assert isinstance(prim, cond_prims)
-                condition.append(prim)
         constant_names = self.constants.keys()
         self.constants = {}  # prepare for the next operator
         return self.model.chunk(args[0], 'operator', *constant_names,
-                                condition=condition, action=action)
+                                prims=args[1:])
 
     def facts(self, args):
         for chunk in args:

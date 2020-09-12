@@ -27,15 +27,12 @@ class Chunk:
             self.reinforced = []
 
     @classmethod
-    def build(cls, config, name, isa, *slot_vals, condition=None, action=None,
-              **kwargs):
+    def build(cls, config, name, isa, *slot_vals, prims=None, **kwargs):
         """alternate constructor"""
 
         slots = {i + 1: value for i, value in enumerate(slot_vals)}
-        if condition:
-            slots['condition'] = condition
-        if action:
-            slots['action'] = action
+        if prims:
+            slots['prims'] = prims
         return cls(config, slots, name, isa, **kwargs)
 
     # accessors
@@ -70,6 +67,5 @@ class Chunk:
     def __repr__(self):
         remainder = ' '.join(self.slotslist())
         with contextlib.suppress(KeyError):
-            remainder += f" | {'; '.join(repr(c) for c in self['condition'])}"
-            remainder += f" ==> {'; '.join(repr(a) for a in self['action'])}"
+            remainder += f" | {'; '.join(repr(c) for c in self['prims'])}"
         return f"<{self[0]}: {self['isa']} | {remainder}>"

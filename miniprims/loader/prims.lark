@@ -3,7 +3,6 @@
 COMMENT: /\s*\/\/.*/
 NAME: /[a-zA-Z]([a-zA-Z0-9-]*[a-zA-Z0-9])?/
 BUFFER_NAME.2: /[A-Z]+/
-NIL: "nil"
 
 %import common.WS
 %import common.INT
@@ -89,7 +88,7 @@ atom: literal -> codeliteral
 literal: INT
        | SIGNED_NUMBER
        | ESCAPED_STRING
-       | NIL
+       | "nil"
 
 // skills (operators)
 
@@ -97,11 +96,15 @@ skill: "define skill" NAME "{" operator* "}"
 
 operator: "operator" NAME "{" conditionprim+ "==>" actionprim+ "}"
 
-conditionprim: bufferslot "=" bufferslot -> bufferequal
-             | bufferslot "<>" bufferslot -> bufferinequal
+conditionprim: bufferslot "=" bufferslot -> equalsprim
+             | bufferslot "<>" bufferslot -> notequalsprim
+             | bufferslot "=" "nil" -> emptyprim
+             | "nil" "=" bufferslot -> emptyprim
+             | bufferslot "<>" "nil" -> notemptyprim
+             | "nil" "<>" bufferslot -> notemptyprim
 
-actionprim: bufferslot "->" bufferslot
+actionprim: bufferslot "->" bufferslot -> copyprim
+          | "nil" "->" bufferslot -> removeprim
 
-bufferslot: NIL
-          | BUFFER_NAME INT
+bufferslot: BUFFER_NAME INT
           | NAME

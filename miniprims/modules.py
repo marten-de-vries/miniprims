@@ -86,8 +86,6 @@ class Declarative(BufferModule):
             if activation < self.config['rt']:
                 continue
             # TODO: more activation
-            # '-' because Python implements a min heap and we want a max heap
-            # random() to prevent chunks from ever being compared.
             bisect.insort(result, (activation, numpy.random.random(), chunk))
             result = result[:max_matches]
 
@@ -159,64 +157,30 @@ class Procedural:
 
     def step(self, env):
         # return True if the simulation should pause, else False
-        matches = self.declarative.best_matches(self._match_ops, env.now)
+        matches = self.declarative.best_matches(self.match_ops, env.now)
         for _, op in matches:
-            if self.match_conditions(op):
-                self.modules['C'].buffer = op
-
-                # perform actions
-                module_resp_processes = self.perform_actions(env, op)
-                yield env.timeout(0.05)  # TODO
+            self.modules['C'].buffer = op
+            if all(prim.match_condition(self.modules) for prim in op['prims']):
+                # found our operator! Perform action
+                new_buffers = yield env.process(self.perform_action(env, op))
+                module_resp_processes = self.module_responses(env, new_buffers)
                 stop_requests = yield env.all_of(module_resp_processes)
                 return any(stop_requests.values())
-        return False
+        return False  # no operator matched
 
-    def _match_ops(self, chunk):
+    def match_ops(self, chunk):
         return chunk['isa'] == 'operator'
 
-    def match_conditions(self, operator):
-        return all(self.match_condition(part)
-                   for part in operator['condition'])
-
-    def match_condition(self, condition):
-        undefined = object()
-        try:
-            lhs_val = self.slot_value(condition.lhs)
-        except KeyError:
-            lhs_val = undefined
-        try:
-            rhs_val = self.slot_value(condition.rhs)
-        except KeyError:
-            rhs_val = undefined
-        if lhs_val == undefined and rhs_val == undefined:
-            return False
-        all_nothing = ((lhs_val is None and rhs_val == undefined) or
-                       (lhs_val == undefined and rhs_val is None))
-        if all_nothing:
-            return condition.operator(None, None)
-        return condition.operator(lhs_val, rhs_val)
-
-    def perform_actions(self, env, operator):
+    def perform_action(self, env, operator):
         new_buffers = {}
-        for lhs, rhs in operator['action']:
-            mod_name, slot = rhs
-            mod = self.modules[mod_name]
-            # TODO: only RT? And is there a nicer way?
-            fallback = {} if mod_name == 'RT' else mod.buffer.slots.copy()
-            new_buffer = new_buffers.setdefault(mod, fallback)
-            slot_val = self.slot_value(lhs)
-            if slot_val is None:
-                del new_buffer[slot]
-            else:
-                new_buffer[slot] = slot_val
+        for i, prim in enumerate(operator['prims']):
+            prim.fire(self.modules, new_buffers)
+            # TODO:
+            yield env.timeout(0.05 if i == 0 else 0.2)
+        return new_buffers
 
+    def module_responses(self, env, new_buffers):
         for mod, new_buffer in new_buffers.items():
             c = Chunk(self.config, new_buffer)
             callback = mod.buffer_change(c, env)
             yield env.process(callback)
-
-    def slot_value(self, slotinfo):
-        if not slotinfo:
-            return None
-        mod, slot = slotinfo
-        return self.modules[mod].buffer[slot]

@@ -1,9 +1,10 @@
 from .chunk import Chunk
-from .prims import SlotID, EqualsPRIM, NotEqualsPRIM, CopyPRIM
+from .prims import (SlotID, EmptyPRIM, EqualsPRIM, CopyPRIM, NotEmptyPRIM,
+                    NotEqualsPRIM, RemovePRIM)
 from .skill import Skill
 
-__all__ = ('Model', 'Chunk', 'SlotID', 'EqualsPRIM', 'NotEqualsPRIM',
-           'CopyPRIM', 'Skill')
+__all__ = ('Model', 'Chunk', 'SlotID', 'EmptyPRIM', 'EqualsPRIM', 'CopyPRIM',
+           'NotEmptyPRIM', 'NotEqualsPRIM', 'RemovePRIM', 'Skill')
 
 # TODO:
 # - proper declarative memory (incl. skills extension)

@@ -3,7 +3,8 @@ import contextlib
 import inspect
 import textwrap
 
-from .prims import CopyPRIM, SlotID, EqualsPRIM, NotEqualsPRIM
+from .prims import (CopyPRIM, EmptyPRIM, EqualsPRIM, NotEmptyPRIM,
+                    NotEqualsPRIM, RemovePRIM, SlotID)
 
 # TODO: reverse logic. The model can call this, which also means we get rid of
 # 'model' in the constructor & the other TODO.
@@ -46,7 +47,7 @@ class Skill:
                 assert condition  # there should be at least one condition
                 action.append(self.to_action_prim(expr, constants))
         operator = model.chunk(func.name, 'operator', *constants,
-                               condition=condition, action=action)
+                               prims=condition + action)
         model.declarative.add_memory(operator)
 
     def to_condition_prim(self, expr, constants):
@@ -56,10 +57,16 @@ class Skill:
         lhs = self.to_slot(expr.value.left, constants)
         rhs = self.to_slot(expr.value.comparators[0], constants)
         if isinstance(expr.value.ops[0], ast.Eq):
-            return EqualsPRIM(lhs, rhs)
+            if lhs and rhs:
+                return EqualsPRIM(lhs, rhs)
+            else:
+                return EmptyPRIM(lhs or rhs)
         else:
             assert isinstance(expr.value.ops[0], ast.NotEq)
-            return NotEqualsPRIM(lhs, rhs)
+            if lhs and rhs:
+                return NotEqualsPRIM(lhs, rhs)
+            else:
+                return NotEmptyPRIM(lhs or rhs)
 
     def to_slot(self, expr, constants):
         if isinstance(expr, ast.Subscript):
@@ -87,4 +94,8 @@ class Skill:
         assert isinstance(expr.value.op, ast.RShift)
         lhs = self.to_slot(expr.value.left, constants)
         rhs = self.to_slot(expr.value.right, constants)
-        return CopyPRIM(lhs, rhs)
+        assert rhs
+        if lhs:
+            return CopyPRIM(lhs, rhs)
+        else:
+            return RemovePRIM(rhs)
