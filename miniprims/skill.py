@@ -3,8 +3,8 @@ import contextlib
 import inspect
 import textwrap
 
-from .prims import (CopyPRIM, EmptyPRIM, EqualsPRIM, NotEmptyPRIM,
-                    NotEqualsPRIM, RemovePRIM, SlotID)
+from .production import (CopyPRIM, EmptyPRIM, EqualsPRIM, NotEmptyPRIM,
+                         NotEqualsPRIM, RemovePRIM, SlotID)
 
 # TODO: reverse logic. The model can call this, which also means we get rid of
 # 'model' in the constructor & the other TODO.

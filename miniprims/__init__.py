@@ -1,6 +1,6 @@
 from .chunk import Chunk
-from .prims import (SlotID, EmptyPRIM, EqualsPRIM, CopyPRIM, NotEmptyPRIM,
-                    NotEqualsPRIM, RemovePRIM)
+from .production import (SlotID, EmptyPRIM, EqualsPRIM, CopyPRIM, NotEmptyPRIM,
+                         NotEqualsPRIM, RemovePRIM)
 from .skill import Skill
 
 __all__ = ('Model', 'Chunk', 'SlotID', 'EmptyPRIM', 'EqualsPRIM', 'CopyPRIM',
@@ -9,11 +9,11 @@ __all__ = ('Model', 'Chunk', 'SlotID', 'EmptyPRIM', 'EqualsPRIM', 'CopyPRIM',
 # TODO:
 # - proper declarative memory (incl. skills extension)
 # - FIXMEs
-# - production compilation (& productions)
 # - spreading activation & skills (incl. proper context/goal tracking)
 # - timings
 # - operator compilation (bottom-up learning)
 # - perceptual action PRIMs
+# - imaginal + retrieval reinforcement
 
 import simpy
 

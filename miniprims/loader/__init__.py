@@ -174,7 +174,7 @@ class TreeLoader(lark.Transformer):
         return False
 
     def initskills(self, args):
-        self.model.goal.focus(args)
+        self.model.goal.focus(*args)
         raise lark.visitors.Discard()
 
     # model

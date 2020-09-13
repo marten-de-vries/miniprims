@@ -16,6 +16,10 @@ class Chunk:
 
         # read-only dict with chunk data
         self.slots = types.MappingProxyType({0: name, 'isa': isa, **slots})
+        dat = sorted((k, v) for k, v in self.slots.items()
+                     if isinstance(k, int) and k != 0)
+        self.slotslist = tuple(v for k, v in dat)
+
         if activation is None:
             self.fixed_activation = self.config['default-activation']
         else:
@@ -38,10 +42,6 @@ class Chunk:
     # accessors
     def __getitem__(self, slot):
         return self.slots[slot]
-
-    def slotslist(self):
-        return [v for k, v in sorted(self.slots.items(), key=lambda x: str(x))
-                if isinstance(k, int) and k != 0]
 
     @numpy.errstate(divide='ignore')
     def baselevel_activation(self, t):
@@ -67,7 +67,7 @@ class Chunk:
 
     # debugging
     def __repr__(self):
-        remainder = ' '.join(self.slotslist())
+        remainder = ' '.join(self.slotslist)
         with contextlib.suppress(KeyError):
             remainder += f" | {'; '.join(repr(c) for c in self['prims'])}"
         return f"<{self[0]}: {self['isa']} | {remainder}>"

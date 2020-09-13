@@ -37,17 +37,26 @@ for i in range(1, len(digits)):
                        digits[i])
     model.declarative.add_memory(fact)
 
-start = random.randint(0, 3)
-end = start + 1 + random.randint(0, 3)
-print("Counting from", digits[start], "to", digits[end])
-
-model.visual.show(digits[start], digits[end])
 model.action.interrupt_trigger = ['say', 'stop']
 model.action.register('say', 0.3, 0.1, 'uniform', 'Saying')
-model.goal.focus(['count'])
-model.schedule_steps_until_done()
-model.env.run()
+for i in range(100):
+    start = random.randint(0, 3)
+    end = start + 1 + random.randint(0, 3)
+    print("Counting from", digits[start], "to", digits[end])
 
-print("done")
-# issue reward
-# trial end
+    model.visual.show(digits[start], digits[end])
+    model.goal.focus('count')
+    model.schedule_steps_until_done()
+    model.env.run()
+    model.imaginal.buffers.append(model.chunk('Imaginal', 'buffer'))
+    model.declarative.buffers.append(model.chunk('Declarative', 'buffer'))
+    import simpy
+    model.env = simpy.Environment()
+
+    print("done")
+    # issue reward
+    # trial end
+
+for p in sorted(model.procedural.productions.values(),
+                key=lambda p: -p.utility):
+    print(p.utility, p)
