@@ -57,16 +57,22 @@ class Skill:
         lhs = self.to_slot(expr.value.left, constants)
         rhs = self.to_slot(expr.value.comparators[0], constants)
         if isinstance(expr.value.ops[0], ast.Eq):
-            if lhs and rhs:
-                return EqualsPRIM(lhs, rhs)
-            else:
-                return EmptyPRIM(lhs or rhs)
+            return self.equality_prim(lhs, rhs)
         else:
             assert isinstance(expr.value.ops[0], ast.NotEq)
-            if lhs and rhs:
-                return NotEqualsPRIM(lhs, rhs)
-            else:
-                return NotEmptyPRIM(lhs or rhs)
+            return self.nonequality_prim(lhs, rhs)
+
+    def equality_prim(self, lhs, rhs):
+        if lhs and rhs:
+            return EqualsPRIM(lhs, rhs)
+        else:
+            return EmptyPRIM(lhs or rhs)
+
+    def nonequality_prim(self, lhs, rhs):
+        if lhs and rhs:
+            return NotEqualsPRIM(lhs, rhs)
+        else:
+            return NotEmptyPRIM(lhs or rhs)
 
     def to_slot(self, expr, constants):
         if isinstance(expr, ast.Subscript):

@@ -45,14 +45,12 @@ class TreeLoader(lark.Transformer):
         prefs = {}
         slots = {}
         for i, arg in enumerate(args):
-            if i == 0:
-                name = arg
-            elif arg.data == 'slot':
+            if arg.data == 'slot':
                 slots[i] = arg.children[0]
             else:
                 assert arg.data == 'pref'
                 prefs[arg.children[0]] = arg.children[1]
-        return miniprims.Chunk(self.model.config, slots, name, 'fact', **prefs)
+        return miniprims.Chunk(self.model.config, slots, isa='fact', **prefs)
 
     # script
     def variable(self, args):

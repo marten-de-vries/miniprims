@@ -34,7 +34,7 @@ action: "define action" NAME "{" pair+ "}"
 
 // initialize declarative memory
 facts: "define facts" "{" chunk* "}"
-chunk: "(" NAME (pref | slot)+ ")"
+chunk: "(" (pref | slot)+ ")"
 slot: NAME
 pref: ":" NAME (NAME | literal)
 

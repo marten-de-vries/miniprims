@@ -172,22 +172,26 @@ class Procedural:
     def productions_for(self, op):
         remaining = tuple(op['prims'])
         while remaining:
-            # baseline: the single-PRIM production
-            best_production = Production(self.config, prims=[remaining[0]],
-                                         initial_utility=self.config['primU'])
-            best_utility = best_production.utility
-
-            noise_values = numpy.random.logistic(scale=self.config['egs'],
-                                                 size=len(self.productions))
-            for p, noise in zip(self.productions.values(), noise_values):
-                utility = p.utility + noise
-                is_best = (utility > best_utility and
-                           p.prims == remaining[:len(p.prims)])
-                if is_best:
-                    best_utility = utility
-                    best_production = p
+            best_production = self.best_production_for(remaining)
             yield best_production
             remaining = remaining[len(best_production.prims):]
+
+    def best_production_for(self, prims):
+        # baseline: the single-PRIM production
+        best_production = Production(self.config, prims=[prims[0]],
+                                     initial_utility=self.config['primU'])
+        best_utility = best_production.utility
+
+        noise_values = numpy.random.logistic(scale=self.config['egs'],
+                                             size=len(self.productions))
+        for p, noise in zip(self.productions.values(), noise_values):
+            utility = p.utility + noise
+            is_best = (utility > best_utility and
+                       p.prims == prims[:len(p.prims)])
+            if is_best:
+                best_utility = utility
+                best_production = p
+        return best_production
 
     def run_productions(self, env, productions):
         new_buffers = {}
