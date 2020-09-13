@@ -25,6 +25,9 @@ from .utils import Config
 class Model:
     def __init__(self, name=None):
         self.name = name
+        self.init_script = None
+        self.script = None
+
         self.config = Config()
 
         self.action = Action(self.config)
@@ -48,14 +51,29 @@ class Model:
         chunk = Chunk(self.config, skill.slots, name, 'skill')
         self.declarative.add_memory(chunk)
 
-    def script(self, script):
-        pass  # TODO
+    def register_script(self, script):
+        assert not self.script
+        self.script = script
+
+    def register_init_script(self, script):
+        assert not self.init_script
+        self.init_script = script
 
     def schedule_steps_until_done(self):
         return self.env.process(self._run())
 
     def schedule_step(self):
         return self.env.process(self.procedural.step(self.env))
+
+    def run(self):
+        if self.init_script:
+            self.init_script()
+        for i in range(10):
+            if self.script:
+                self.script()
+            for module in self.modules.values():
+                module.reset()
+            self.env = simpy.Environment()
 
     def _run(self):
         # TODO: reset buffers?

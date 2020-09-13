@@ -14,7 +14,12 @@ class BufferModule:
         self.config = config
         # a list of all buffers this module has known. The most recent one is
         # accessable as self.buffer
-        self.buffers = [Chunk.build(config, self.__class__.__name__, 'buffer')]
+        self.buffers = []
+        self.reset()
+
+    def reset(self):
+        empty = Chunk.build(self.config, self.__class__.__name__, 'buffer')
+        self.buffers.append(empty)
 
     @property
     def buffer(self):
@@ -51,6 +56,9 @@ class Goal(BufferModule):
     def focus(self, *values):
         chunk = Chunk.build(self.config, 'Goal', 'buffer', *values)
         self.buffers.append(chunk)
+
+    def reset(self):
+        self.buffers = self.buffers[:1]  # TODO: HACKETY HACK
 
 
 class Declarative(BufferModule):
@@ -127,10 +135,10 @@ class Action(BufferModule):
         info = self.buffer.slotslist
         try:
             action, *args = info
-        except ValueError:
+            calculate_duration, output = self.actions[action]
+        except (ValueError, KeyError):
             pass
         else:
-            calculate_duration, output = self.actions[action]
             yield env.timeout(calculate_duration())
             print(f"{env.now:7.3f} {output} {' '.join(args)}")
 
@@ -140,6 +148,9 @@ class Action(BufferModule):
 
 class Constants:
     """Not a module, just used to hold the current operator in its 'buffer'."""
+
+    def reset(self):
+        pass
 
 
 class Procedural:

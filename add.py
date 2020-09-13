@@ -45,7 +45,7 @@ model.config.override('default-activation', 1.0)
 digits = ["zero", "one", "two", "three", "four", "five", "six", "seven",
           "eight", "nine", "ten"]
 for i in range(0, 10):
-    fact = model.chunk(f"cf{i}", "count_fact", digits[i], digits[i + 1],
+    fact = model.chunk(f"cf{i}", "fact", "count_fact", digits[i], digits[i + 1],
                        activation=3.0)
     model.declarative.add_memory(fact)
 
@@ -57,8 +57,9 @@ num2 = random.randint(1, 5)
 print("Adding", digits[num1], "and", digits[num2])
 
 model.visual.show(digits[num1],digits[num2])
-model.action.interrupt_trigger = "answer"
+model.action.interrupt_trigger = ("answer",)
 model.schedule_steps_until_done()
 model.env.run()
+print(model.action.buffer)
 # model.issue_reward()
 # model.trial_end()

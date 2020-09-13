@@ -39,8 +39,9 @@ slot: NAME
 pref: ":" NAME (NAME | literal)
 
 // scripts
-script: "define script" "{" body "}"
-initscript: "define init-script" "{" body "}"
+script: "define script" "{" scriptcode "}"
+initscript: "define init-script" "{" scriptcode "}"
+scriptcode: body
 
 body: statement*
 
@@ -85,8 +86,7 @@ atom: literal -> codeliteral
     | "!" atom -> negation
     | "(" expression ")" -> prioritization
 
-literal: INT
-       | SIGNED_NUMBER
+literal: SIGNED_NUMBER
        | ESCAPED_STRING
        | "nil"
 

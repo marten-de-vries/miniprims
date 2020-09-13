@@ -2,37 +2,62 @@ import miniprims
 
 import ast
 
+import astor
 import lark
+import numpy
 
 parser = lark.Lark.open('prims.lark', rel_to=__file__, parser='lalr',
-                        debug=True)
+                        debug=True, propagate_positions=True)
 
 
+def build_globals(model):
+    def run_until_action(*action):
+        model.action.interrupt_trigger = action
+        model.schedule_steps_until_done()
+        model.env.run()
+
+    result = {
+        '__builtins__': {},  # not a hard sandbox, but nice for cleanliness
+        'random': lambda n: numpy.random.randint(n),
+        'screen': model.visual.show,
+        'run-until-action': run_until_action,
+        'issue-reward': lambda: None,  # TODO
+        'trial-end': lambda: None,  # TODO: call reset?
+        'print': print,
+        'last-action': lambda: list(model.action.buffer.slotslist)
+    }
+    return result
+
+
+@lark.visitors.v_args(meta=True)
 class TreeLoader(lark.Transformer):
-    mp = ast.Name('miniprims', ast.Load())
-
-    def __init__(self, *args, **kwargs):
+    def __init__(self, filename, globals, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.userscript = None
+        self.filename = filename
+
+        self.parsed_task = False
         self.model = miniprims.Model()
+        self.globals = build_globals(self.model)
         self.constants = {}
+
+    def copy_locs(self, source, target):
+        target.lineno = source.line
+        target.col_offset = source.column
+        target.end_lineno = source.end_line
+        target.end_col_offset = source.end_column
+        return target
 
     # basic type conversions
     def ESCAPED_STRING(self, args):
         return ast.literal_eval(args)
-
-    def INT(self, args):
-        return int(args)
-
-    def SIGNED_NUMBER(self, args):
-        return float(args)
+    INT = SIGNED_NUMBER = ESCAPED_STRING
 
     def NAME(self, args):
         return str(args)
     BUFFER_NAME = NAME
 
-    def literal(self, args):
+    def literal(self, args, _):
         try:
             return args[0]
         except IndexError:
@@ -41,7 +66,7 @@ class TreeLoader(lark.Transformer):
     prioritization = literal
 
     # facts
-    def chunk(self, args):
+    def chunk(self, args, _):
         prefs = {}
         slots = {}
         for i, arg in enumerate(args):
@@ -53,55 +78,57 @@ class TreeLoader(lark.Transformer):
         return miniprims.Chunk(self.model.config, slots, isa='fact', **prefs)
 
     # script
-    def variable(self, args):
-        return ast.Name(args[0], ast.Load())
+    def variable(self, args, meta):
+        return self.copy_locs(meta, ast.Name(args[0], ast.Load()))
 
-    def call(self, args):
-        return ast.Call(args[0], args[1:], [])
+    def call(self, args, meta):
+        return self.copy_locs(meta, ast.Call(args[0], args[1:], []))
 
-    def array(self, args):
-        return ast.List(args, ast.Load())
+    def array(self, args, meta):
+        return self.copy_locs(meta, ast.List(args, ast.Load()))
 
-    def indexing(self, args):
+    def indexing(self, args, meta):
         index = ast.Index(args[1])
-        return ast.Subscript(args[0], index, ast.Load())
+        return self.copy_locs(meta, ast.Subscript(args[0], index, ast.Load()))
 
-    def codeliteral(self, args):
-        return ast.Constant(args[0])
+    def codeliteral(self, args, meta):
+        return self.copy_locs(meta, ast.Constant(args[0]))
 
-    def expressionstatement(self, args):
-        return ast.Expr(args[0])
+    def expressionstatement(self, args, meta):
+        return self.copy_locs(meta, ast.Expr(args[0]))
 
-    def addition(self, args):
-        return ast.BinOp(args[0], ast.Add(), args[1])
+    def addition(self, args, meta):
+        return self.copy_locs(meta, ast.BinOp(args[0], ast.Add(), args[1]))
 
-    def equality(self, args):
-        return ast.Compare(args[0], [ast.Eq()], [args[1]])
+    def equality(self, args, meta):
+        comparison = ast.Compare(args[0], [ast.Eq()], [args[1]])
+        return self.copy_locs(meta, comparison)
 
-    def negation(self, args):
-        return ast.UnaryOp(ast.Not(), args[0])
+    def negation(self, args, meta):
+        return self.copy_locs(meta, ast.UnaryOp(ast.Not(), args[0]))
 
-    def assignment(self, args):
+    def assignment(self, args, meta):
         variable = ast.Name(args[0], ast.Store())
-        return ast.Assign([variable], args[1])
+        return self.copy_locs(meta, ast.Assign([variable], args[1]))
 
-    def ifstmt(self, args):
-        return ast.If(args[0], args[1], args[2] if len(args) == 3 else [])
+    def ifstmt(self, args, meta):
+        ifstmt = ast.If(args[0], args[1], args[2] if len(args) == 3 else [])
+        return self.copy_locs(meta, ifstmt)
 
-    def whilestmt(self, args):
-        return ast.While(*args, [])
+    def whilestmt(self, args, meta):
+        return self.copy_locs(meta, ast.While(*args, []))
 
-    def body(self, args):
+    def body(self, args, _):
         return args
     pair = body
 
     # skill
-    def bufferslot(self, args):
+    def bufferslot(self, args, _):
         if len(args) == 1:
             return args[0]
         return miniprims.SlotID(*args)
 
-    def equalsprim(self, args):
+    def equalsprim(self, args, _):
         return miniprims.EqualsPRIM(self._to_id(args[0]), self._to_id(args[1]))
 
     def _to_id(self, bufferslot):
@@ -111,33 +138,33 @@ class TreeLoader(lark.Transformer):
             bufferslot = miniprims.SlotID('C', slot_num)
         return bufferslot
 
-    def notequalsprim(self, args):
+    def notequalsprim(self, args, _):
         return miniprims.NotEqualsPRIM(self._to_id(args[0]),
                                        self._to_id(args[1]))
 
-    def emptyprim(self, args):
+    def emptyprim(self, args, _):
         return miniprims.EmptyPRIM(self._to_id(args[0]))
 
-    def notemptyprim(self, args):
+    def notemptyprim(self, args, _):
         return miniprims.NotEmptyPRIM(self._to_id(args[0]))
 
-    def copyprim(self, args):
+    def copyprim(self, args, _):
         return miniprims.CopyPRIM(self._to_id(args[0]), self._to_id(args[1]))
 
-    def removeprim(self, args):
+    def removeprim(self, args, _):
         return miniprims.RemovePRIM(self._to_id(args[0]))
 
-    def operator(self, args):
+    def operator(self, args, _):
         constant_names = self.constants.keys()
         self.constants = {}  # prepare for the next operator
         return self.model.chunk(args[0], 'operator', *constant_names,
                                 prims=args[1:])
 
-    def facts(self, args):
+    def facts(self, args, _):
         for chunk in args:
             self.model.declarative.add_memory(chunk)
 
-    def skill(self, args):
+    def skill(self, args, _):
         # add operators that are part of the skill
         for operator_chunk in args[1:]:
             self.model.declarative.add_memory(operator_chunk)
@@ -148,38 +175,51 @@ class TreeLoader(lark.Transformer):
         # skill_chunk = self.model.chunk(name, 'skill')
         # self.model.declarative.add_memory(skill_chunk)
 
-    def action(self, args):
+    def action(self, args, _):
         name = args[0]
         opts = dict(args[1:])
         self.model.action.register(name, **opts)
 
-    def script(self, args):
-        assert not self.userscript
+    def scriptcode(self, args, meta):
+        script = ast.parse("def script(): pass")
+        script.body[0].body = args[0]
+        self.copy_locs(meta, script.body[0])
+        ast.fix_missing_locations(script)
 
-        self.userscript = ast.parse("")
-        self.userscript.body = args[0]
-        ast.fix_missing_locations(self.userscript)
+        print(astor.to_source(script))
+        bytecode = compile(script, self.filename, "exec")
+        scope = self.globals.copy()
+        exec(bytecode, scope)
+        return scope['script']
 
-    def task(self, args):
+    def script(self, args, _):
+        self.model.register_script(args[0])
+
+    def initscript(self, args):
+        self.model.register_init_script(args[0])
+
+    def task(self, args, _):
+        assert not self.parsed_task
         self.model.name = args[0]
         for key, value in args[1:]:
             self.model.config.override(key, value)
+        self.parsed_task = True
 
-    def true(self, args):
+    def true(self, args, _):
         return True
 
-    def false(self, args):
+    def false(self, args, _):
         return False
 
-    def initskills(self, args):
+    def initskills(self, args, _):
         self.model.goal.focus(*args)
         raise lark.visitors.Discard()
 
     # model
-    def start(self, args):
+    def start(self, args, _):
         # check every definition has been handled by other visitor methods
         assert(a is None for a in args)
-        return self.userscript, self.model
+        return self.model
 
 
 def load(filename):
@@ -190,5 +230,6 @@ def load(filename):
     with open(filename) as f:
         tree = parser.parse(f.read())
         # print(tree.pretty())
-        script, model = TreeLoader().transform(tree)
-        return script, model
+        # model is returned by the 'start' rule
+        model = TreeLoader(filename, globals).transform(tree)
+        return model

@@ -37,9 +37,9 @@ for i in range(1, len(digits)):
                        digits[i])
     model.declarative.add_memory(fact)
 
-model.action.interrupt_trigger = ['say', 'stop']
+model.action.interrupt_trigger = ('say', 'stop')
 model.action.register('say', 0.3, 0.1, 'uniform', 'Saying')
-for i in range(100):
+for i in range(1000):
     start = random.randint(0, 3)
     end = start + 1 + random.randint(0, 3)
     print("Counting from", digits[start], "to", digits[end])
