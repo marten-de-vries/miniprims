@@ -5,4 +5,8 @@ model = load(filename)
 # show resulting declarative memory
 for chunk in model.modules['RT'].memory:
     print(chunk)
-model.run()
+
+steps = model.schedule_run(times=10)
+# example of how the caller is in control over the event loop
+while not steps.processed:
+    stop = model.env.run(model.current_step)

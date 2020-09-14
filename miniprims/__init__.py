@@ -15,11 +15,9 @@ __all__ = ('Model', 'Chunk', 'SlotID', 'EmptyPRIM', 'EqualsPRIM', 'CopyPRIM',
 # - perceptual action PRIMs
 # - imaginal + retrieval reinforcement
 
-import simpy
-
 from .modules import (Action, Constants, Declarative, Goal, Imaginal,
                       Procedural, Visual)
-from .utils import Config
+from .utils import Config, Environment
 
 
 class Model:
@@ -42,7 +40,10 @@ class Model:
                         'WM': self.imaginal}
         self.procedural = Procedural(self.config, self.modules)
 
-        self.env = simpy.Environment()
+        self.env = Environment()
+        self.last_reset = 0
+        self.init_script_ran = False
+        self._current_step = self.env.timeout(0)
 
     def chunk(self, *args, **kwargs):
         return Chunk.build(self.config, *args, **kwargs)
@@ -59,25 +60,38 @@ class Model:
         assert not self.init_script
         self.init_script = script
 
-    def schedule_steps_until_done(self):
-        return self.env.process(self._run())
+    def schedule_steps(self, until=float('inf')):
+        return self.env.process(self._steps(until))
+
+    def _steps(self, until):
+        stop = False
+        while self.env.time < until and not stop:
+            stop = yield self.schedule_step()
 
     def schedule_step(self):
-        return self.env.process(self.procedural.step(self.env))
+        self._current_step = self.env.process(self.procedural.step(self.env))
+        return self._current_step
 
-    def run(self):
-        if self.init_script:
-            self.init_script()
-        for i in range(10):
+    @property
+    def current_step(self):
+        if self._current_step.processed:
+            # we're waiting for the model to start again
+            return self.env.timeout(0)
+        return self._current_step
+
+    def schedule_run(self, times=1):
+        return self.env.process(self._run(times))
+
+    def _run(self, times):
+        if self.init_script and not self.init_script_ran:
+            yield self.env.process(self.init_script())
+            self.init_script_ran = True
+        for _ in range(times):
             if self.script:
-                self.script()
-            for module in self.modules.values():
-                module.reset()
-            self.env = simpy.Environment()
+                yield self.env.process(self.script())
+            self.reset()  # TODO: leave it to the script itself?
 
-    def _run(self):
-        # TODO: reset buffers?
-        # TODO: run script?
-        stop = False
-        while not stop:
-            stop = yield self.schedule_step()
+    def reset(self):
+        for module in self.modules.values():
+            module.reset()
+        self.env.last_reset = self.env.now

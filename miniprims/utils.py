@@ -2,6 +2,8 @@ import ast
 import configparser
 import os
 
+import simpy
+
 
 class Config:
     def __init__(self, overrides=None):
@@ -35,3 +37,13 @@ class Config:
             return self.overrides[option]
         except KeyError:
             return self.defaults[option]
+
+
+class Environment(simpy.Environment):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.last_reset = 0
+
+    @property
+    def time(self):
+        return self.now - self.last_reset

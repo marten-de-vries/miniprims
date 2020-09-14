@@ -46,14 +46,10 @@ for i in range(1000):
 
     model.visual.show(digits[start], digits[end])
     model.goal.focus('count')
-    model.schedule_steps_until_done()
-    model.env.run()
-    model.imaginal.buffers.append(model.chunk('Imaginal', 'buffer'))
-    model.declarative.buffers.append(model.chunk('Declarative', 'buffer'))
-    import simpy
-    model.env = simpy.Environment()
-
+    model.env.run(model.schedule_steps())
     print("done")
+
+    model.reset()
     # issue reward
     # trial end
 

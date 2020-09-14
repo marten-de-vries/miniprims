@@ -58,8 +58,8 @@ print("Adding", digits[num1], "and", digits[num2])
 
 model.visual.show(digits[num1],digits[num2])
 model.action.interrupt_trigger = ("answer",)
-model.schedule_steps_until_done()
-model.env.run()
+model.env.run(model.schedule_steps())
+
 print(model.action.buffer)
 # model.issue_reward()
 # model.trial_end()

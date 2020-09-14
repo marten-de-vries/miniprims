@@ -102,7 +102,7 @@ class Declarative(BufferModule):
 
     def buffer_change(self, new_buffer, env):
         try:
-            exponent, match = self.best_match(new_buffer, env.now)
+            exponent, match = self.best_match(new_buffer, env.time)
         except StopIteration:
             exponent = self.config['rt']
             match = Chunk.build(self.config, 'retrieval-failure', 'status',
@@ -140,7 +140,7 @@ class Action(BufferModule):
             pass
         else:
             yield env.timeout(calculate_duration())
-            print(f"{env.now:7.3f} {output} {' '.join(args)}")
+            print(f"{env.time:7.3f} {output} {' '.join(args)}")
 
         # if the interrupt trigger is in the buffer, stop.
         return self.interrupt_trigger == info[:len(self.interrupt_trigger)]
@@ -163,7 +163,7 @@ class Procedural:
 
     def step(self, env):
         # return True if the simulation should pause, else False
-        matches = self.declarative.best_matches(self.match_ops, env.now)
+        matches = self.declarative.best_matches(self.match_ops, env.time)
         for _, op in matches:
             self.modules['C'].buffer = op
             op_productions = list(self.productions_for(op))

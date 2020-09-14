@@ -13,24 +13,71 @@ parser = lark.Lark.open('prims.lark', rel_to=__file__, parser='lalr',
 def build_globals(model):
     def run_until_action(*action):
         model.action.interrupt_trigger = action
-        model.schedule_steps_until_done()
-        model.env.run()
+        return model.schedule_steps()
+
+    def run_absolute_time_or_action(time, *action):
+        model.action.interrupt_trigger = action
+        return model.schedule_steps(until=time)
+
+    def run_relative_time(time):
+        return model.schedule_steps(model.env.time + time)
+
+    def run_relative_time_or_action(time, *action):
+        model.action.interrupt_trigger = action
+        return run_relative_time(time)
 
     result = {
         '__builtins__': {},  # not a hard sandbox, but nice for cleanliness
-        'random': lambda n: numpy.random.randint(n),
-        'screen': model.visual.show,
+
+        # running the model
+        'run-step': model.schedule_step,
         'run-until-action': run_until_action,
-        'issue-reward': lambda: None,  # TODO
+        'run-relative-time': run_relative_time,
+        'run-absolute-time': model.schedule_steps,
+        'run-relative-time-or-action': run_relative_time_or_action,
+        'run-absolute-time-or-action': run_absolute_time_or_action,
+
+        # perception and action
+        'screen': model.visual.show,
+        'last-action': lambda: list(model.action.buffer.slotslist),
+
+        # run control of the model
+        # TODO: trial-start
         'trial-end': lambda: None,  # TODO: call reset?
+        'issue-reward': lambda: None,  # TODO
+        'sleep': model.env.timeout,
+
+        # modification and inspection of the model
+        'time': lambda: model.env.time,
+        # TODO: add-dm
+        # TODO: set-activation
+        # TODO: set-sji
+        # TODO: sgp
+        # TODO: batch-parameters
+        # TODO: set-skill
+        # TODO: set-buffer-slot
+        # TODO: get-buffer-slot
+
+        # other commands and functions
         'print': print,
-        'last-action': lambda: list(model.action.buffer.slotslist)
+        'shuffle': numpy.random.permutation,
+        'length': len,
+        # TODO: set-data-file-field
+        'random': lambda n: numpy.random.randint(n),
+        # TODO: random-string
+        'str-to-int': int,
+        # TODO: set-graph-title
+        # TODO: plot-point
+        # TODO: set-average-window
     }
     return result
 
 
 @lark.visitors.v_args(meta=True)
 class TreeLoader(lark.Transformer):
+    noop = ast.Expr(ast.Yield(ast.Call(ast.Name('sleep', ctx=ast.Load()),
+                                       [ast.Constant(0)], [])))
+
     def __init__(self, filename, globals, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -82,7 +129,11 @@ class TreeLoader(lark.Transformer):
         return self.copy_locs(meta, ast.Name(args[0], ast.Load()))
 
     def call(self, args, meta):
-        return self.copy_locs(meta, ast.Call(args[0], args[1:], []))
+        name, *funcargs = args
+        call = ast.Call(name, funcargs, [])
+        if name.id.startswith('run-') or name == 'sleep':
+            call = ast.Yield(call)
+        return self.copy_locs(meta, call)
 
     def array(self, args, meta):
         return self.copy_locs(meta, ast.List(args, ast.Load()))
@@ -183,6 +234,8 @@ class TreeLoader(lark.Transformer):
     def scriptcode(self, args, meta):
         script = ast.parse("def script(): pass")
         script.body[0].body = args[0]
+        # to make sure every script becomes a generator function
+        script.body[0].body.append(self.noop)
         self.copy_locs(meta, script.body[0])
         ast.fix_missing_locations(script)
 
