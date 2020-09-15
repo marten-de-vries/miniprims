@@ -107,4 +107,5 @@ actionprim: bufferslot "->" bufferslot -> copyprim
           | "nil" "->" bufferslot -> removeprim
 
 bufferslot: BUFFER_NAME INT
-          | NAME
+          | "*" NAME -> skillconstant
+          | NAME     -> constant

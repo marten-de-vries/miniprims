@@ -1,76 +1,27 @@
 import miniprims
+from .env import build_globals
 
 import ast
+import collections
 
 import astor
 import lark
-import numpy
 
 parser = lark.Lark.open('prims.lark', rel_to=__file__, parser='lalr',
                         debug=True, propagate_positions=True)
 
 
-def build_globals(model):
-    def run_until_action(*action):
-        model.action.interrupt_trigger = action
-        return model.schedule_steps()
+def load(filename):
+    """Loads a (Swift) .prims file into a miniprims model, converting its
+       scripts to a Python AST that can be exec'd easily.
 
-    def run_absolute_time_or_action(time, *action):
-        model.action.interrupt_trigger = action
-        return model.schedule_steps(until=time)
-
-    def run_relative_time(time):
-        return model.schedule_steps(model.env.time + time)
-
-    def run_relative_time_or_action(time, *action):
-        model.action.interrupt_trigger = action
-        return run_relative_time(time)
-
-    result = {
-        '__builtins__': {},  # not a hard sandbox, but nice for cleanliness
-
-        # running the model
-        'run-step': model.schedule_step,
-        'run-until-action': run_until_action,
-        'run-relative-time': run_relative_time,
-        'run-absolute-time': model.schedule_steps,
-        'run-relative-time-or-action': run_relative_time_or_action,
-        'run-absolute-time-or-action': run_absolute_time_or_action,
-
-        # perception and action
-        'screen': model.visual.show,
-        'last-action': lambda: list(model.action.buffer.slotslist),
-
-        # run control of the model
-        # TODO: trial-start
-        'trial-end': lambda: None,  # TODO: call reset?
-        'issue-reward': lambda: None,  # TODO
-        'sleep': model.env.timeout,
-
-        # modification and inspection of the model
-        'time': lambda: model.env.time,
-        # TODO: add-dm
-        # TODO: set-activation
-        # TODO: set-sji
-        # TODO: sgp
-        # TODO: batch-parameters
-        # TODO: set-skill
-        # TODO: set-buffer-slot
-        # TODO: get-buffer-slot
-
-        # other commands and functions
-        'print': print,
-        'shuffle': numpy.random.permutation,
-        'length': len,
-        # TODO: set-data-file-field
-        'random': lambda n: numpy.random.randint(n),
-        # TODO: random-string
-        'str-to-int': int,
-        # TODO: set-graph-title
-        # TODO: plot-point
-        # TODO: set-average-window
-    }
-    return result
+    """
+    with open(filename) as f:
+        tree = parser.parse(f.read())
+        # print(tree.pretty())
+        # model is returned by the 'start' rule
+        model = TreeLoader(filename, globals).transform(tree)
+        return model
 
 
 @lark.visitors.v_args(meta=True)
@@ -86,7 +37,10 @@ class TreeLoader(lark.Transformer):
         self.parsed_task = False
         self.model = miniprims.Model()
         self.globals = build_globals(self.model)
-        self.constants = {}
+        self.reset_constants()
+
+    def reset_constants(self):
+        self.constants = collections.OrderedDict()
 
     def copy_locs(self, source, target):
         target.lineno = source.line
@@ -104,14 +58,6 @@ class TreeLoader(lark.Transformer):
         return str(args)
     BUFFER_NAME = NAME
 
-    def literal(self, args, _):
-        try:
-            return args[0]
-        except IndexError:
-            return None  # nil
-
-    prioritization = literal
-
     # facts
     def chunk(self, args, _):
         prefs = {}
@@ -123,6 +69,21 @@ class TreeLoader(lark.Transformer):
                 assert arg.data == 'pref'
                 prefs[arg.children[0]] = arg.children[1]
         return miniprims.Chunk(self.model.config, slots, isa='fact', **prefs)
+
+    def pair(self, args, _):
+        return args
+
+    def true(self, args, _):
+        return True
+
+    def false(self, args, _):
+        return False
+
+    def literal(self, args, _):
+        try:
+            return args[0]
+        except IndexError:
+            return None  # nil
 
     # script
     def variable(self, args, meta):
@@ -158,6 +119,9 @@ class TreeLoader(lark.Transformer):
     def negation(self, args, meta):
         return self.copy_locs(meta, ast.UnaryOp(ast.Not(), args[0]))
 
+    def prioritization(self, args, _):
+        return args[0]
+
     def assignment(self, args, meta):
         variable = ast.Name(args[0], ast.Store())
         return self.copy_locs(meta, ast.Assign([variable], args[1]))
@@ -169,67 +133,7 @@ class TreeLoader(lark.Transformer):
     def whilestmt(self, args, meta):
         return self.copy_locs(meta, ast.While(*args, []))
 
-    def body(self, args, _):
-        return args
-    pair = body
-
-    # skill
-    def bufferslot(self, args, _):
-        if len(args) == 1:
-            return args[0]
-        return miniprims.SlotID(*args)
-
-    def equalsprim(self, args, _):
-        return miniprims.EqualsPRIM(self._to_id(args[0]), self._to_id(args[1]))
-
-    def _to_id(self, bufferslot):
-        if isinstance(bufferslot, str):
-            next_i = len(self.constants) + 1
-            slot_num = self.constants.setdefault(bufferslot, next_i)
-            bufferslot = miniprims.SlotID('C', slot_num)
-        return bufferslot
-
-    def notequalsprim(self, args, _):
-        return miniprims.NotEqualsPRIM(self._to_id(args[0]),
-                                       self._to_id(args[1]))
-
-    def emptyprim(self, args, _):
-        return miniprims.EmptyPRIM(self._to_id(args[0]))
-
-    def notemptyprim(self, args, _):
-        return miniprims.NotEmptyPRIM(self._to_id(args[0]))
-
-    def copyprim(self, args, _):
-        return miniprims.CopyPRIM(self._to_id(args[0]), self._to_id(args[1]))
-
-    def removeprim(self, args, _):
-        return miniprims.RemovePRIM(self._to_id(args[0]))
-
-    def operator(self, args, _):
-        constant_names = self.constants.keys()
-        self.constants = {}  # prepare for the next operator
-        return self.model.chunk(args[0], 'operator', *constant_names,
-                                prims=args[1:])
-
-    def facts(self, args, _):
-        for chunk in args:
-            self.model.declarative.add_memory(chunk)
-
-    def skill(self, args, _):
-        # add operators that are part of the skill
-        for operator_chunk in args[1:]:
-            self.model.declarative.add_memory(operator_chunk)
-
-        # TODO: re-enable after activations have been figured out
-        # ... and create a chunk for the skill itself
-        # name = args[0]
-        # skill_chunk = self.model.chunk(name, 'skill')
-        # self.model.declarative.add_memory(skill_chunk)
-
-    def action(self, args, _):
-        name = args[0]
-        opts = dict(args[1:])
-        self.model.action.register(name, **opts)
+    body = pair
 
     def scriptcode(self, args, meta):
         script = ast.parse("def script(): pass")
@@ -245,6 +149,63 @@ class TreeLoader(lark.Transformer):
         exec(bytecode, scope)
         return scope['script']
 
+    # skill
+    def bufferslot(self, args, _):
+        return miniprims.SlotID(*args)
+
+    def constant(self, args, _):
+        next_i = len(self.constants) + 1
+        slot_num = self.constants.setdefault(args[0], next_i)
+        return miniprims.SlotID('C', slot_num)
+
+    def skillconstant(self, args, meta):
+        return self.constant([miniprims.SlotPlaceholder(args[0])], meta)
+
+    def equalsprim(self, args, _):
+        return miniprims.EqualsPRIM(args[0], args[1])
+
+    def notequalsprim(self, args, _):
+        return miniprims.NotEqualsPRIM(args[0], args[1])
+
+    def emptyprim(self, args, _):
+        return miniprims.EmptyPRIM(args[0])
+
+    def notemptyprim(self, args, _):
+        return miniprims.NotEmptyPRIM(args[0])
+
+    def copyprim(self, args, _):
+        return miniprims.CopyPRIM(args[0], args[1])
+
+    def removeprim(self, args, _):
+        return miniprims.RemovePRIM(args[0])
+
+    def operator(self, args, _):
+        constant_names = self.constants.keys()
+        self.reset_constants()  # prepare for the next operator
+        return self.model.chunk(args[0], 'operator', *constant_names,
+                                prims=args[1:])
+
+    # top level definitions
+    def facts(self, args, _):
+        for chunk in args:
+            self.model.declarative.add_memory(chunk)
+
+    def skill(self, args, _):
+        # add operators that are part of the skill
+        for operator_chunk in args[1:]:
+            self.model.declarative.add_memory(operator_chunk)
+
+        # ... and create a chunk for the skill itself. Kind of like
+        # instantiating it without arguments.
+        name = args[0]
+        skill_chunk = self.model.chunk(name, 'skill', name)
+        self.model.declarative.add_memory(skill_chunk)
+
+    def action(self, args, _):
+        name = args[0]
+        opts = dict(args[1:])
+        self.model.action.register(name, **opts)
+
     def script(self, args, _):
         self.model.register_script(args[0])
 
@@ -258,12 +219,6 @@ class TreeLoader(lark.Transformer):
             self.model.config.override(key, value)
         self.parsed_task = True
 
-    def true(self, args, _):
-        return True
-
-    def false(self, args, _):
-        return False
-
     def initskills(self, args, _):
         self.model.goal.focus(*args)
         raise lark.visitors.Discard()
@@ -273,16 +228,3 @@ class TreeLoader(lark.Transformer):
         # check every definition has been handled by other visitor methods
         assert(a is None for a in args)
         return self.model
-
-
-def load(filename):
-    """Loads a (Swift) .prims file into a miniprims model, converting its
-       scripts to a Python AST that can be exec'd easily.
-
-    """
-    with open(filename) as f:
-        tree = parser.parse(f.read())
-        # print(tree.pretty())
-        # model is returned by the 'start' rule
-        model = TreeLoader(filename, globals).transform(tree)
-        return model

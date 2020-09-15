@@ -1,10 +1,11 @@
 from .chunk import Chunk
-from .production import (SlotID, EmptyPRIM, EqualsPRIM, CopyPRIM, NotEmptyPRIM,
-                         NotEqualsPRIM, RemovePRIM)
+from .production import (SlotID, SlotPlaceholder, EmptyPRIM, EqualsPRIM,
+                         CopyPRIM, NotEmptyPRIM, NotEqualsPRIM, RemovePRIM)
 from .skill import Skill
 
-__all__ = ('Model', 'Chunk', 'SlotID', 'EmptyPRIM', 'EqualsPRIM', 'CopyPRIM',
-           'NotEmptyPRIM', 'NotEqualsPRIM', 'RemovePRIM', 'Skill')
+__all__ = ('Model', 'Chunk', 'SlotID', 'SlotPlaceholder', 'EmptyPRIM',
+           'EqualsPRIM', 'CopyPRIM', 'NotEmptyPRIM', 'NotEqualsPRIM',
+           'RemovePRIM', 'Skill')
 
 # TODO:
 # - proper declarative memory (incl. skills extension)
@@ -41,14 +42,18 @@ class Model:
         self.procedural = Procedural(self.config, self.modules)
 
         self.env = Environment()
-        self.last_reset = 0
+        self.start_time = 0
         self.init_script_ran = False
         self._current_step = self.env.timeout(0)
+        self.skills = set()
 
     def chunk(self, *args, **kwargs):
         return Chunk.build(self.config, *args, **kwargs)
 
     def register_skill(self, name, skill):
+        if type(skill) not in self.skills:
+            skill.add_operators_to_memory(self)
+            self.skills.add(type(skill))
         chunk = Chunk(self.config, skill.slots, name, 'skill')
         self.declarative.add_memory(chunk)
 
@@ -94,4 +99,4 @@ class Model:
     def reset(self):
         for module in self.modules.values():
             module.reset()
-        self.env.last_reset = self.env.now
+        self.env.start_time = self.env.now

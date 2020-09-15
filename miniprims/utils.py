@@ -42,8 +42,8 @@ class Config:
 class Environment(simpy.Environment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.last_reset = 0
+        self.start_time = 0
 
     @property
     def time(self):
-        return self.now - self.last_reset
+        return self.now - self.start_time

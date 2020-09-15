@@ -1,5 +1,4 @@
 import contextlib
-import math
 import types
 
 import numpy
@@ -47,7 +46,10 @@ class Chunk:
     def baselevel_activation(self, t):
         d = self.config['bll']
         # TODO: check validity of fixed term!!!
-        fixedterm = math.exp(self.fixed_activation)
+        if self.fixed_activation is None:
+            fixedterm = 0
+        else:
+            fixedterm = numpy.exp(self.fixed_activation)
         if self.config['ol']:  # optimized learning
             t0 = self.creation_time
             n = self.reinforced_count
@@ -67,7 +69,11 @@ class Chunk:
 
     # debugging
     def __repr__(self):
-        remainder = ' '.join(self.slotslist)
+        remainder = ' '.join(str(s) for s in self.slotslist)
         with contextlib.suppress(KeyError):
             remainder += f" | {'; '.join(repr(c) for c in self['prims'])}"
+        for key, value in self.slots.items():
+            if isinstance(key, int) or key in ['prims', 'isa']:
+                continue  # already handled
+            remainder += f" | {key}={value}"
         return f"<{self[0]}: {self['isa']} | {remainder}>"

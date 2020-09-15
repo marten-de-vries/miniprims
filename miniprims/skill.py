@@ -1,13 +1,11 @@
 import ast
+import collections
 import contextlib
 import inspect
 import textwrap
 
 from .production import (CopyPRIM, EmptyPRIM, EqualsPRIM, NotEmptyPRIM,
-                         NotEqualsPRIM, RemovePRIM, SlotID)
-
-# TODO: reverse logic. The model can call this, which also means we get rid of
-# 'model' in the constructor & the other TODO.
+                         NotEqualsPRIM, RemovePRIM, SlotID, SlotPlaceholder)
 
 
 class Skill:
@@ -15,13 +13,15 @@ class Skill:
     chunks (the last one is TODO).
 
     """
-    def __init__(self, model):
+    def __init__(self, **slots):
+        self.slots = slots
+        self.slots[1] = type(self).__name__
+
+    def add_operators_to_memory(self, model):
         for attribute in self.__class__.__dict__.values():
-            # TODO: check if operators already in model
             if not inspect.isfunction(attribute):
                 continue
             self.to_operator(model, attribute)
-        self.slots = {}  # TODO
 
     def to_operator(self, model, function):
         module = ast.parse(textwrap.dedent(inspect.getsource(function)))
@@ -33,7 +33,9 @@ class Skill:
             assert not func.type_comment
         with contextlib.suppress(AttributeError):
             assert not func.args.posonlyargs
-        constants = [a.arg for a in func.args.args]
+        assert func.args.args[0].arg == 'self'
+        items = ((a.arg, i + 1) for i, a in enumerate(func.args.args[1:]))
+        constants = collections.OrderedDict(items)
 
         condition = []
         action = []
@@ -46,8 +48,9 @@ class Skill:
                 assert isinstance(expr.value, ast.BinOp)
                 assert condition  # there should be at least one condition
                 action.append(self.to_action_prim(expr, constants))
-        operator = model.chunk(func.name, 'operator', *constants,
-                               prims=condition + action)
+        prims = condition + action
+        operator = model.chunk(func.name, 'operator', *constants.keys(),
+                               prims=prims)
         model.declarative.add_memory(operator)
 
     def to_condition_prim(self, expr, constants):
@@ -81,7 +84,13 @@ class Skill:
 
             return SlotID(expr.value.id, self.index_num(expr.slice))
         elif isinstance(expr, ast.Name):
-            return SlotID('C', constants.index(expr.id) + 1)
+            return SlotID('C', constants[expr.id])
+        elif isinstance(expr, ast.Attribute):
+            assert isinstance(expr.value, ast.Name)
+            assert expr.value.id == 'self'
+            next_i = len(constants) + 1
+            num = constants.setdefault(SlotPlaceholder(expr.attr), next_i)
+            return SlotID('C', num)
         else:
             assert isinstance(expr, (ast.Constant, ast.NameConstant))
             assert expr.value is None

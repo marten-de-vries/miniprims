@@ -39,6 +39,15 @@ class SlotID(typing.NamedTuple):
         return f'{self.buffer_name}{self.slot_num}'
 
 
+class SlotPlaceholder(typing.NamedTuple):
+    """Immutable representation of a slot placeholder like '*next-op'"""
+
+    name: str
+
+    def __repr__(self):
+        return f'*{self.name}'
+
+
 class EmptyPRIM(typing.NamedTuple):
     """Immutable representation of a prim like 'WM1==nil'"""
 

@@ -8,7 +8,7 @@ import random
 
 
 class Add(miniprims.Skill):
-    def start_adding(zero, count_fact):
+    def start_adding(self, zero, count_fact):
         WM[1] == None
 
         V[1] >> WM[1]
@@ -16,7 +16,7 @@ class Add(miniprims.Skill):
         count_fact >> RT[1]
         V[1] >> RT[2]
 
-    def increase_sum(count_fact):
+    def increase_sum(self, count_fact):
         WM[1] == RT[2]
         WM[2] != V[2]
 
@@ -24,7 +24,7 @@ class Add(miniprims.Skill):
         count_fact >> RT[1]
         WM[2] >> RT[2]
 
-    def increase_count(count_fact):
+    def increase_count(self, count_fact):
         WM[2] == RT[2]
         WM[2] != V[2]
 
@@ -32,7 +32,7 @@ class Add(miniprims.Skill):
         count_fact >> RT[1]
         WM[1] >> RT[2]
 
-    def finish(answer):
+    def finish(self, answer):
         WM[2] == V[2]
 
         answer >> AC[1]
@@ -49,7 +49,7 @@ for i in range(0, 10):
                        activation=3.0)
     model.declarative.add_memory(fact)
 
-model.register_skill('add', Add(model))
+model.register_skill('add', Add())
 model.goal.focus('add')
 
 num1 = random.randint(1, 5)

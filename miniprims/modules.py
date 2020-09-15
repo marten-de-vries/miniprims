@@ -1,12 +1,13 @@
 """Implementation details of PRIMs modules."""
 
 import bisect
+import contextlib
 import math
 
 import numpy
 
 from .chunk import Chunk
-from .production import Production
+from .production import Production, SlotPlaceholder
 
 
 class BufferModule:
@@ -65,22 +66,21 @@ class Declarative(BufferModule):
     def __init__(self, config):
         super().__init__(config)
 
-        self.memory = []
+        self.memory = {}
 
     def add_memory(self, new_chunk, t=0):
-        for chunk in self.memory:
-            if chunk.slots == new_chunk.slots:
-                break  # there's an existing chunk in memory like this one
-        else:
+        try:
+            chunk = self.memory[new_chunk[0]]
+        except KeyError:
             # no chunk like this in memory yet, so create it
             chunk = new_chunk
-            self.memory.append(chunk)
+            self.memory[chunk[0]] = chunk
         # reinforce the chunk
         chunk.reinforce(t)
 
     def best_matches(self, match_cond, t, max_matches=None):
         result = []
-        for chunk in self.memory:
+        for chunk in self.memory.values():
             if not match_cond(chunk):
                 continue
             activation = chunk.baselevel_activation(t)
@@ -102,7 +102,7 @@ class Declarative(BufferModule):
 
     def buffer_change(self, new_buffer, env):
         try:
-            exponent, match = self.best_match(new_buffer, env.time)
+            exponent, match = self.best_match(new_buffer, env.now)
         except StopIteration:
             exponent = self.config['rt']
             match = Chunk.build(self.config, 'retrieval-failure', 'status',
@@ -163,22 +163,45 @@ class Procedural:
 
     def step(self, env):
         # return True if the simulation should pause, else False
-        matches = self.declarative.best_matches(self.match_ops, env.time)
-        for _, op in matches:
+        for op in self.find_ops(env):
             self.modules['C'].buffer = op
             op_productions = list(self.productions_for(op))
             productions_process = self.run_productions(env, op_productions)
-            success, new_buffers = yield env.process(productions_process)
-            if success:
-                self.reinforce(op_productions)
+            try:
+                new_buffers = yield env.process(productions_process)
+            except RuntimeError:
+                continue
+            self.reinforce(op_productions)
 
-                module_resp_processes = self.module_responses(env, new_buffers)
-                stop_requests = yield env.all_of(module_resp_processes)
-                return any(stop_requests.values())
-        return False  # no operator matched
+            module_resp_processes = self.module_responses(env, new_buffers)
+            stop_requests = yield env.all_of(module_resp_processes)
+            return any(stop_requests.values())
+        return True  # no operator matched
+
+    def find_ops(self, env):
+        matches = self.declarative.best_matches(self.match_ops, env.now)
+        for _, op in matches:
+            with contextlib.suppress(KeyError):
+                op = self.bind_variables(op)
+                yield op
 
     def match_ops(self, chunk):
         return chunk['isa'] == 'operator'
+
+    def bind_variables(self, op_orig):
+        slots = {}
+        for key, value in op_orig.slots.items():
+            if isinstance(value, SlotPlaceholder):
+                value = self.find_binding(value.name)
+            slots[key] = value
+        return Chunk(self.config, slots)
+
+    def find_binding(self, name):
+        for goal in self.modules['G'].buffer.slotslist:
+            with contextlib.suppress(KeyError):
+                # binding succesful
+                return self.declarative.memory[goal][name]
+        raise KeyError(name)  # could not find a binding
 
     def productions_for(self, op):
         remaining = tuple(op['prims'])
@@ -215,9 +238,9 @@ class Procedural:
                 self.compile(productions[i - 1], production)
             yield env.timeout(t)
             if not match_condition:
-                # some production condition failed -> wrong operator
-                return False, new_buffers
-        return True, new_buffers
+                # wrong operator
+                raise RuntimeError('some production condition failed')
+        return new_buffers
 
     def compile(self, a, b):
         prims = a.prims + b.prims
